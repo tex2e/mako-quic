@@ -1,10 +1,75 @@
 
-from protocol_keyschedule import HKDF_expand_label
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from protocol_keyschedule import HKDF_extract, HKDF_expand_label
+from protocol_longpacket import PacketType
+from utils import hexdump, bytexor
 
 initial_salt = bytes.fromhex('38762cf7f55934b34d179ae6a4c80cadccbb7f0a')
+
+# --- 鍵導出 ---
 
 def get_key_iv_hp(cs_initial_secret):
     cs_key = HKDF_expand_label(cs_initial_secret, b'quic key', b'', 16)
     cs_iv = HKDF_expand_label(cs_initial_secret, b'quic iv', b'', 12)
     cs_hp = HKDF_expand_label(cs_initial_secret, b'quic hp', b'', 16)
     return cs_key, cs_iv, cs_hp
+
+def get_client_server_key_iv_hp(client_dst_connection_id):
+    initial_secret = HKDF_extract(initial_salt, client_dst_connection_id)
+    client_initial_secret = HKDF_expand_label(initial_secret, b'client in', b'', 32)
+    server_initial_secret = HKDF_expand_label(initial_secret, b'server in', b'', 32)
+    client_key, client_iv, client_hp = get_key_iv_hp(client_initial_secret)
+    server_key, server_iv, server_hp = get_key_iv_hp(server_initial_secret)
+    return (client_key, client_iv, client_hp,
+            server_key, server_iv, server_hp)
+
+# --- ヘッダー保護 ---
+
+def header_protection(long_packet, sc_hp_key) -> bytes:
+    recv_packet_bytes = bytes(long_packet)
+
+    def get_np_offset_and_sample_offset(long_packet) -> (int, int):
+        # pn_offset is the start of the Packet Number field.
+        pn_offset = 7 + len(long_packet.dest_conn_id) + \
+                        len(long_packet.src_conn_id) + \
+                        len(long_packet.length)
+        if PacketType(long_packet.flags.long_packet_type) == PacketType.INITIAL:
+            pn_offset += len(bytes(long_packet.token))
+
+        sample_offset = pn_offset + 4
+
+        return pn_offset, sample_offset
+
+    pn_offset, sample_offset = get_np_offset_and_sample_offset(long_packet)
+
+    sample_length = 16
+    sample = recv_packet_bytes[sample_offset:sample_offset+sample_length]
+    # print('sample:')
+    # print(hexdump(sample))
+
+    def generate_mask(hp_key, sample) -> bytes:
+        cipher = Cipher(algorithms.AES(key=hp_key), modes.ECB())
+        encryptor = cipher.encryptor()
+        ct = encryptor.update(sample) + encryptor.finalize()
+        mask = bytearray(ct)[0:5]
+        return mask
+
+    mask = generate_mask(sc_hp_key, sample)
+    # print('mask:')
+    # print(hexdump(mask))
+
+    recv_packet_bytes = bytearray(recv_packet_bytes)
+    if (recv_packet_bytes[0] & 0x80) == 0x80:
+        # Long header: 4 bits masked
+        recv_packet_bytes[0] ^= mask[0] & 0x0f
+    else:
+        # Short header: 5 bits masked
+        recv_packet_bytes[0] ^= mask[0] & 0x1f
+
+    # ヘッダ保護解除後にパケット番号の長さ取得
+    pn_length = (recv_packet_bytes[0] & 0x03) + 1
+
+    recv_packet_bytes[pn_offset:pn_offset+pn_length] = \
+        bytexor(recv_packet_bytes[pn_offset:pn_offset+pn_length], mask[1:1+pn_length])
+
+    return recv_packet_bytes
