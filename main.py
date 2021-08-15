@@ -1,10 +1,11 @@
 
 import os
-from protocol_longpacket import LongPacket, PacketType, InitialPacket
+from metatype import Uint64, List
+from protocol_longpacket import LongPacket, PacketType, InitialPacket, Frame
 from utils import hexdump, bytexor
-from protocol_packetprotection import get_client_server_key_iv_hp
-from protocol_packetprotection import header_protection, encrypt_payload, decrypt_payload
+from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
 
+## 切り替えて使うこと!!
 msg_sender = 'client'
 # msg_sender = 'server'
 
@@ -103,7 +104,7 @@ initial_packet_bytes = bytes(initial_packet)
 print(initial_packet)
 print(hexdump(initial_packet_bytes))
 
-ciphertext_payload = bytes(initial_packet.packet_payload)
+ciphertext_payload_bytes = bytes(initial_packet.packet_payload)
 if msg_sender == 'client':
     cs_key = client_key
     cs_iv = client_iv
@@ -112,7 +113,14 @@ else:
     cs_iv = server_iv
 aad = initial_packet.get_header_bytes()  # Additional Auth Data
 packet_number = initial_packet.get_packet_number_int()
-plaintext_payload = decrypt_payload(ciphertext_payload, cs_key, cs_iv, aad, packet_number)
+plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, cs_key, cs_iv, aad, packet_number)
 print('decrypted:')
-print(hexdump(plaintext_payload))
+print(hexdump(plaintext_payload_bytes))
 
+# --- 4. Framesの解析 ---
+
+print('-----')
+Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
+
+frames = Frames.from_bytes(plaintext_payload_bytes)
+print(frames)

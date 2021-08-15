@@ -122,7 +122,7 @@ class MetaStruct(Type):
                 # その他の要素は出力が1行なので、コンソールの幅を超えないように折返し出力させる
                 nest = self.count_ancestors() + 1
                 output = '\n  '.join(textwrap.wrap(output,
-                        width=shutil.get_terminal_size().columns-(nest*2)))
+                        width=shutil.get_terminal_size().columns-(nest*3)))
             elems.append('+ ' + output)
         return title + "\n".join(elems)
 

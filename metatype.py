@@ -320,14 +320,20 @@ def List(size_t, elem_t):
             size_t = List.size_t
             content = b''.join(bytes(elem) for elem in self.get_array())
             content_len = len(content)
-            return bytes(size_t(content_len)) + content
+            if isinstance(size_t, type(lambda: None)): # サイズが動的の場合は先頭に長さのバイト列を加えない
+                return content
+            else:
+                return bytes(size_t(content_len)) + content
 
         @classmethod
         def from_stream(cls, fs, parent=None):
             from metastruct import MetaStruct
             size_t = cls.size_t
             elem_t = cls.elem_t
-            list_size = int(size_t.from_stream(fs)) # リスト全体の長さ
+            if isinstance(size_t, type(lambda: None)): # サイズが動的の場合は、無名関数を実行してサイズを決定する
+                list_size = int(size_t(parent))
+            else:
+                list_size = int(size_t.from_stream(fs)) # リスト全体の長さ
             elem_size = elem_t.size # 要素の長さを表す部分の長さ
 
             array = []
@@ -349,17 +355,21 @@ def List(size_t, elem_t):
         def __repr__(self):
             from metastruct import MetaStruct
 
+            if callable(self.__class__.size_t): # サイズが動的の場合は、lambdaと表示
+                size_t_class_name = 'lambda'
+            else: # サイズが静的の場合は、長さを表すクラス名を表示
+                size_t_class_name = self.__class__.size_t.__name__
+
             if my_issubclass(List.elem_t, MetaStruct):
                 # リストの要素がMetaStructのときは、各要素を複数行で表示する
                 output = ''
                 for elem in self.get_array():
                     content = textwrap.indent(repr(elem), prefix="  ").strip()
                     output += '+ %s\n' % content
-                return 'List<%s>:\n%s' % (self.__class__.size_t.__name__, output)
+                return 'List<%s>:\n%s' % (size_t_class_name, output)
             else:
                 # それ以外のときは配列の中身を一行で表示する
-                return 'List<%s>%s' % \
-                    (self.__class__.size_t.__name__, repr(self.get_array()))
+                return 'List<%s>%s' % (size_t_class_name, repr(self.get_array()))
 
         def __iter__(self):
             return iter(self.array)
@@ -395,6 +405,9 @@ class Enum(Type, BuildinEnum):
     def get_type(cls):
         return cls.elem_t.value
 
+    def __repr__(self):
+        return '%s.%s(%s)' % (self.__class__.__name__, self.name, self.value)
+
 # 列挙型にない値が与えらたとき unknown という名前の値を動的に生成して返すためのクラス
 class EnumUnknown(Enum):
     @classmethod
@@ -405,6 +418,26 @@ class EnumUnknown(Enum):
         return obj
 
 
+# --- Empty --------------------------------------------------------------------
+
+class Empty(Type):
+    def __init__(self):
+        pass
+
+    @classmethod
+    def from_stream(cls, fs, parent=None):
+        return cls()
+
+    def __bytes__(self):
+        return b''
+
+    def __repr__(self):
+        return 'Empty'
+
+
+
+# データ構造復元時のデバッグ方法：
+# print(fs.read(10)); fs.seek(-10, 1)
 
 # ------------------------------------------------------------------------------
 if __name__ == '__main__':
