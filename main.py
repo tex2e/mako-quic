@@ -1,11 +1,12 @@
 
 import os
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from protocol_longpacket import LongPacket, PacketType, InitialPacket
 from utils import hexdump, bytexor
+from protocol_packetprotection import get_client_server_key_iv_hp
+from protocol_packetprotection import header_protection, encrypt_payload, decrypt_payload
 
-# msg_sender = 'client'
-msg_sender = 'server'
+msg_sender = 'client'
+# msg_sender = 'server'
 
 if msg_sender == 'client':
     # Client Inital Packet
@@ -70,7 +71,6 @@ client_dst_connection_id = bytes.fromhex('8394c8f03e515708')
 
 # --- 1. 鍵を導出する ---
 
-from protocol_packetprotection import get_client_server_key_iv_hp
 client_key, client_iv, client_hp, server_key, server_iv, server_hp = \
     get_client_server_key_iv_hp(client_dst_connection_id)
 print('---')
@@ -89,7 +89,6 @@ print(hexdump(server_hp))
 
 # --- 2. Header Protectionを解除する ---
 
-from protocol_packetprotection import header_protection
 if msg_sender == 'client':
     cs_hp = client_hp
 else:
@@ -103,27 +102,6 @@ initial_packet = InitialPacket.from_bytes(recv_packet_bytes)
 initial_packet_bytes = bytes(initial_packet)
 print(initial_packet)
 print(hexdump(initial_packet_bytes))
-
-def decrypt_payload(payload: bytes, cs_key: bytes, cs_iv: bytes, aad: bytes,
-                    packet_number: bytes) -> bytes:
-    packet_number_bytes = packet_number.to_bytes(len(cs_iv), 'big')
-    print('packet_number:')
-    print(hexdump(packet_number_bytes))
-    nonce = bytexor(packet_number_bytes, cs_iv)
-    print('nonce:')
-    print(hexdump(nonce))
-    print('aad:')
-    print(hexdump(aad))
-
-    ciphertext_payload = bytes(initial_packet.packet_payload)
-    print('ciphertext_payload:')
-    print(hexdump(ciphertext_payload))
-    aesgcm = AESGCM(key=cs_key)
-
-    plaintext_payload = aesgcm.decrypt(nonce, ciphertext_payload, aad)
-    print('plaintext_payload:')
-    print(hexdump(plaintext_payload))
-    return plaintext_payload
 
 ciphertext_payload = bytes(initial_packet.packet_payload)
 if msg_sender == 'client':

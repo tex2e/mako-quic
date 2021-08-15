@@ -1,9 +1,11 @@
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from protocol_keyschedule import HKDF_extract, HKDF_expand_label
 from protocol_longpacket import PacketType
 from utils import hexdump, bytexor
 
+# QUIC version 1
 initial_salt = bytes.fromhex('38762cf7f55934b34d179ae6a4c80cadccbb7f0a')
 
 # --- 鍵導出 ---
@@ -23,7 +25,7 @@ def get_client_server_key_iv_hp(client_dst_connection_id):
     return (client_key, client_iv, client_hp,
             server_key, server_iv, server_hp)
 
-# --- ヘッダー保護 ---
+# --- ヘッダー保護・解除 ---
 
 def header_protection(long_packet, sc_hp_key) -> bytes:
     recv_packet_bytes = bytes(long_packet)
@@ -73,3 +75,51 @@ def header_protection(long_packet, sc_hp_key) -> bytes:
         bytexor(recv_packet_bytes[pn_offset:pn_offset+pn_length], mask[1:1+pn_length])
 
     return recv_packet_bytes
+
+# --- Payload暗号化・復号 ---
+
+def _enc_dec_payload(input_bytes, key, iv, aad, packet_number, mode='encrypt'):
+    packet_number_bytes = packet_number.to_bytes(len(iv), 'big')
+    # print('packet_number:')
+    # print(hexdump(packet_number_bytes))
+    nonce = bytexor(packet_number_bytes, iv)
+    # print('nonce:')
+    # print(hexdump(nonce))
+    # print('aad:')
+    # print(hexdump(aad))
+    aesgcm = AESGCM(key=key)
+    output_bytes = b''
+    if mode == 'encrypt':
+        output_bytes = aesgcm.encrypt(nonce, input_bytes, aad)
+    else:
+        output_bytes = aesgcm.decrypt(nonce, input_bytes, aad)
+    return output_bytes
+
+def decrypt_payload(payload: bytes, cs_key: bytes, cs_iv: bytes, aad: bytes,
+                    packet_number: int) -> bytes:
+    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='decrypt')
+
+def encrypt_payload(payload: bytes, cs_key: bytes, cs_iv: bytes, aad: bytes,
+                    packet_number: int) -> bytes:
+    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='encrypt')
+
+
+
+# ------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    import unittest
+
+    class TestUint(unittest.TestCase):
+
+        def test_enc_dec_payload(self):
+            plaintext_payload = b'\x01\x02\x03\x04\x05' + (b'\x00' * 30)
+            cs_key = b'\x11' * 16
+            cs_iv  = b'\x22' * 12
+            aad    = b'unittest label'
+            packet_number = 999999
+            tmp = encrypt_payload(plaintext_payload, cs_key, cs_iv, aad, packet_number)
+            tmp = decrypt_payload(tmp,               cs_key, cs_iv, aad, packet_number)
+            self.assertEqual(tmp, plaintext_payload)
+
+    unittest.main()
