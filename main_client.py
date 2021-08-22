@@ -141,7 +141,8 @@ print(initial_packet)
 
 
 
-
+# TODO: InitialPacketを暗号化＆ヘッダ保護してから送信する
+# encrypt_payload(plaintext_payload_bytes, cs_key, cs_iv, aad)
 
 from protocol_longpacket import LongPacket
 conn = ClientConn('127.0.0.1', 4433)
@@ -159,7 +160,6 @@ print('=== recv packed ===')
 print(recv_packet)
 print(hexdump(recv_packet_bytes))
 
-
-# encrypt_payload(plaintext_payload_bytes, cs_key, cs_iv, aad)
+# TODO: 受信したRetryパケットからtokenを取り出して、ClientHelloを含むQUICパケットを作って送る
 
 
