@@ -18,8 +18,8 @@ cp quiche /opt/quiche
 サーバ側：
 ```
 cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-server -- \
-      --cert tools/apps/src/bin/cert.crt \
-      --key tools/apps/src/bin/cert.key
+          --cert tools/apps/src/bin/cert.crt \
+          --key tools/apps/src/bin/cert.key
 ```
 
 クライアント側：

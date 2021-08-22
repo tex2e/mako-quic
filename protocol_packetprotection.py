@@ -34,9 +34,9 @@ def header_protection(long_packet, sc_hp_key) -> bytes:
         # pn_offset is the start of the Packet Number field.
         pn_offset = 7 + len(long_packet.dest_conn_id) + \
                         len(long_packet.src_conn_id) + \
-                        len(long_packet.length)
+                        len(long_packet.payload.length)
         if PacketType(long_packet.flags.long_packet_type) == PacketType.INITIAL:
-            pn_offset += len(bytes(long_packet.token))
+            pn_offset += len(bytes(long_packet.payload.token))
 
         sample_offset = pn_offset + 4
 

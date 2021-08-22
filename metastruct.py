@@ -4,6 +4,7 @@ import textwrap # テキストの折り返しと詰め込み
 import re # 正規表現
 import shutil # ターミナル幅の取得
 from metatype import Type, List, ListMeta
+from utils import dig
 
 import dataclasses
 
@@ -29,6 +30,12 @@ def struct(cls):
             setattr(cls, name, None)
     return dataclasses.dataclass(repr=False)(cls)
 
+def is_MetaStruct(elem):
+    return isinstance(elem, MetaStruct)
+
+def is_List_of_MetaStruct(elem):
+    return (isinstance(elem, ListMeta) and
+            issubclass(elem.__class__.elem_t, MetaStruct))
 
 # 構造体の抽象クラス
 class MetaStruct(Type):
@@ -54,10 +61,10 @@ class MetaStruct(Type):
 
     @classmethod
     def create_empty(cls):
-        dict = {}
+        dictionary = {}
         for name, field in cls.__dataclass_fields__.items():
-            dict[name] = None
-        return cls(**dict)
+            dictionary[name] = None
+        return cls(**dictionary)
 
     # 全てのMetaStructは親インスタンスを参照できるようにする。
     def set_parent(self, parent):
@@ -109,20 +116,14 @@ class MetaStruct(Type):
             content = repr(elem)
             output = '%s: %s' % (name, content)
 
-            def is_MetaStruct(elem):
-                return isinstance(elem, MetaStruct)
-            def is_List_of_MetaStruct(elem):
-                return (isinstance(elem, ListMeta) and
-                        issubclass(elem.__class__.elem_t, MetaStruct))
-
             if is_MetaStruct(elem) or is_List_of_MetaStruct(elem):
                 # 要素のMetaStructは出力が複数行になるので、その要素をインデントさせる
                 output = textwrap.indent(output, prefix="  ").strip()
             else:
                 # その他の要素は出力が1行なので、コンソールの幅を超えないように折返し出力させる
-                nest = self.count_ancestors() + 1
-                output = '\n  '.join(textwrap.wrap(output,
-                        width=shutil.get_terminal_size().columns-(nest*3)))
+                nest = self.count_ancestors() + 2
+                output = '\n  '.join(
+                    textwrap.wrap(output, width=shutil.get_terminal_size().columns-(nest*2)))
             elems.append('+ ' + output)
         return title + "\n".join(elems)
 
@@ -150,28 +151,34 @@ class Select:
         # 引数 switch の構文が正しいか確認する。
         #   自身のプロパティを参照する場合 : "プロパティ名"
         #   親のプロパティを参照する場合 : "親クラス名.プロパティ名"
-        if not re.match(r'^[a-zA-Z0-9_]+(\.[a-zA-Z_]+)?$', self.switch):
+        #   自身のプロパティから辿って参照する場合 : "self.プロパティ名1.プロパティ名2"
+        if not re.match(r'^[a-zA-Z0-9_]+(\.[a-zA-Z_]+)?$|^self\.[a-zA-Z0-9_]+(\.[a-zA-Z_]+)*$', self.switch):
             raise Exception('Select(%s) is invalid syntax!' % self.switch)
 
     # フィールド .switch の内容を元に、構築中のインスタンスからプロパティを検索し、
     # プロパティの値から導出した型を返す。
     def select_type_by_switch(self, instance):
-        if re.match(r'^[^.]+\.[^.]+$', self.switch):
-            # 条件が「クラス名.プロパティ名」のとき
-            class_name, prop_name = self.switch.split('.', maxsplit=1)
+        if re.match(r'^self\.([^.]+(?:\.[^.]+)*)', self.switch):
+            # 条件が「self.プロパティ名.プロパティ名...」のとき
+            props = self.switch.split('.')[1:]
+            value = dig(instance, *props)
         else:
-            # 条件が「プロパティ名」のみ
-            class_name, prop_name = instance.__class__.__name__, self.switch
-        # インスタンスのクラス名がclass_nameと一致するまで親をさかのぼる
-        tmp = instance
-        while tmp is not None:
-            if tmp.__class__.__name__ == class_name: break
-            tmp = tmp.parent
-        if tmp is None:
-            raise Exception('Not found %s class in ancestors from %s!' % \
-                (class_name, instance.__class__.__name__))
-        # 既に格納した値の取得
-        value = getattr(tmp, prop_name)
+            if re.match(r'^[^.]+\.[^.]+$', self.switch):
+                # 条件が「クラス名.プロパティ名」のとき
+                class_name, prop_name = self.switch.split('.', maxsplit=1)
+            else:
+                # 条件が「プロパティ名」のみ
+                class_name, prop_name = instance.__class__.__name__, self.switch
+            # インスタンスのクラス名がclass_nameと一致するまで親をさかのぼる
+            tmp = instance
+            while tmp is not None:
+                if tmp.__class__.__name__ == class_name: break
+                tmp = tmp.parent
+            if tmp is None:
+                raise Exception('Not found %s class in ancestors from %s!' % \
+                    (class_name, instance.__class__.__name__))
+            # 既に格納した値の取得
+            value = getattr(tmp, prop_name)
         # 既に格納した値から使用する型を決定する
         ret = self.cases.get(value)
         if ret is None:
@@ -456,13 +463,15 @@ if __name__ == '__main__':
             target = s.fragment.get_array()[0].fragment # 最下の子インスタンス
             self.assertTrue(isinstance(target, Sample1))
             self.assertTrue(isinstance(target.parent, Sample2))
-            self.assertTrue(isinstance(target.parent.parent, Sample3))
+            self.assertTrue(is_List_of_MetaStruct(target.parent.parent))
+            self.assertTrue(isinstance(target.parent.parent.parent, Sample3))
 
             # バイト列から構造体を構築した場合
             s2 = Sample3.from_bytes(bytes(s))
             target = s.fragment.get_array()[0].fragment # 最下の子インスタンス
             self.assertTrue(isinstance(target, Sample1))
             self.assertTrue(isinstance(target.parent, Sample2))
-            self.assertTrue(isinstance(target.parent.parent, Sample3))
+            self.assertTrue(is_List_of_MetaStruct(target.parent.parent))
+            self.assertTrue(isinstance(target.parent.parent.parent, Sample3))
 
     unittest.main()

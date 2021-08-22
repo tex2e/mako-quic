@@ -1,9 +1,10 @@
 
 import os
 from metatype import Uint64, List
-from protocol_longpacket import LongPacket, PacketType, InitialPacket, Frame
 from utils import hexdump, bytexor
 from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
+from protocol_longpacket import LongPacket, PacketType, InitialPacket
+from protocol_frame import Frame
 
 ## 切り替えて使うこと!!
 msg_sender = 'client'

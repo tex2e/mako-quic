@@ -1,4 +1,5 @@
 
+import inspect
 import struct # バイト列の解釈
 import io # バイトストリーム操作
 import textwrap # テキストの折り返しと詰め込み
@@ -117,6 +118,8 @@ class VarLenIntEncoding(Type):
     @classmethod
     def from_stream(cls, fs, parent=None):
         head = fs.read(1)
+        if head == b'':
+            raise RuntimeError("Byte stream has no length!")
         msb2bit = ord(head) >> 6
         length, UintN = cls._get_msb2bit_info(msb2bit)
         rest = fs.read(length - 1)
@@ -189,9 +192,11 @@ def Opaque(size_t):
         return OpaqueFix(size_t)
     if isinstance(size_t, type(lambda: None)): # 引数がラムダのときは実行時に決定する固定長
         return OpaqueFix(size_t)
-    if issubclass(size_t, (Uint, VarLenIntEncoding)): # 引数がUintNのときは可変長
-        return OpaqueVar(size_t)
-    raise TypeError("size's type must be an int or Uint class.")
+    if inspect.isclass(size_t):
+        if issubclass(size_t, (Uint, VarLenIntEncoding)): # 引数がUintNのときは可変長
+            return OpaqueVar(size_t)
+    raise TypeError("Opaque's size type (%s) must be an int, Uint, VarLenIntEncoding class." % \
+                    size_t.__class__.__name__)
 
 def OpaqueFix(size):
 
@@ -210,7 +215,7 @@ def OpaqueFix(size):
                 self.byte = bytes(byte).rjust(size, b'\x00')
 
         def __bytes__(self):
-            return self.byte
+            return bytes(self.byte)
 
         @classmethod
         def from_stream(cls, fs, parent=None):
@@ -277,6 +282,7 @@ OpaqueUint16 = Opaque(Uint16)
 OpaqueUint24 = Opaque(Uint24)
 OpaqueUint32 = Opaque(Uint32)
 OpaqueLength = Opaque(lambda self: self.length)
+OpaqueVarLenIntEncoding = Opaque(VarLenIntEncoding)
 
 
 # --- List ---------------------------------------------------------------------
@@ -314,7 +320,8 @@ def List(size_t, elem_t):
             from metastruct import MetaStruct
             if my_issubclass(List.elem_t, MetaStruct):
                 for elem in self.get_array():
-                    elem.set_parent(self.parent)
+                    # elem.set_parent(self.parent)
+                    elem.set_parent(self)
 
         def __bytes__(self):
             size_t = List.size_t
@@ -355,7 +362,7 @@ def List(size_t, elem_t):
         def __repr__(self):
             from metastruct import MetaStruct
 
-            if callable(self.__class__.size_t): # サイズが動的の場合は、lambdaと表示
+            if isinstance(self.__class__.size_t, type(lambda: None)): # サイズが動的の場合は、lambdaと表示
                 size_t_class_name = 'lambda'
             else: # サイズが静的の場合は、長さを表すクラス名を表示
                 size_t_class_name = self.__class__.size_t.__name__
@@ -407,6 +414,9 @@ class Enum(Type, BuildinEnum):
 
     def __repr__(self):
         return '%s.%s(%s)' % (self.__class__.__name__, self.name, self.value)
+
+    def __int__(self):
+        return int(self.value)
 
 # 列挙型にない値が与えらたとき unknown という名前の値を動的に生成して返すためのクラス
 class EnumUnknown(Enum):

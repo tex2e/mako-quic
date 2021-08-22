@@ -1,5 +1,6 @@
 
-from metatype import Uint8, Uint32, Uint64, Opaque, OpaqueUint8, VarLenIntEncoding, Type, Enum, List
+from metatype import Type, Enum, List
+from metatype import Uint32, Opaque, OpaqueUint8, VarLenIntEncoding, OpaqueVarLenIntEncoding
 import metastruct as meta
 from utils import hexdump
 
@@ -16,11 +17,11 @@ class PacketType(Enum):
 #   Type-Specific Bits (4),
 
 class LongPacketFlags(Type):
-    def __init__(self, header_form, fixed_bit,
-                       long_packet_type, type_specific_bits):
+    def __init__(self, header_form=1, fixed_bit=1,
+                       long_packet_type=0, type_specific_bits=0):
         self.header_form = header_form
         self.fixed_bit = fixed_bit
-        self.long_packet_type = long_packet_type
+        self.long_packet_type = int(long_packet_type)
         self.type_specific_bits = type_specific_bits
         self.type_specific_bits_msb2bit = (type_specific_bits & 0b1100) >> 2
         self.type_specific_bits_lsb2bit = (type_specific_bits & 0b0011) >> 0
@@ -44,13 +45,14 @@ class LongPacketFlags(Type):
         return bytes([res])
 
     def __repr__(self):
-        res = ""
+        res = "LongPacketFlags("
         res += "header_form={0:1b}({1}), ".format(self.header_form,
                 LongPacketFlags.get_name_of_header_form(self.header_form))
         res += "fixed_bit={0:1b}, ".format(self.fixed_bit)
         res += "long_packet_type={0:02b}({1}), ".format(self.long_packet_type,
                 LongPacketFlags.get_name_of_packet_type(self.long_packet_type))
         res += "type_specific_bits={0:04b}".format(self.type_specific_bits)
+        res += ")"
         return res
 
     @staticmethod
@@ -87,14 +89,43 @@ class LongPacketFlags(Type):
 # }
 
 @meta.struct
+class InitialPacketPayload(meta.MetaStruct):
+    token: OpaqueVarLenIntEncoding
+    length: VarLenIntEncoding
+    protected_payload: Opaque(lambda self: self.length) # Protected
+
+class RetryPacketPayload(Type):
+    def __init__(self, retry_token, retry_integrity_tag):
+        self.retry_token = retry_token
+        self.retry_integrity_tag = retry_integrity_tag
+
+    @classmethod
+    def from_stream(cls, fs, parent=None):
+        byte = fs.read() # read rest of all bytes
+        retry_token = byte[:-16]
+        retry_integrity_tag = byte[-16:]
+        return cls(retry_token, retry_integrity_tag)
+
+    def __bytes__(self):
+        return bytes(self.retry_token) + bytes(self.retry_integrity_tag)
+
+    def __repr__(self):
+        return "RetryPacketPayload(retry_token=%s, retry_integrity_tag=%s)" % \
+               (self.retry_token, self.retry_integrity_tag)
+
+@meta.struct
 class LongPacket(meta.MetaStruct):
     flags: LongPacketFlags # Protected
     version: Uint32
     dest_conn_id: OpaqueUint8
     src_conn_id: OpaqueUint8
-    token: Opaque(VarLenIntEncoding)
-    length: VarLenIntEncoding
-    protected_payload: Opaque(lambda self: self.length) # Protected
+    # length: VarLenIntEncoding
+    # protected_payload: Opaque(lambda self: self.length) # Protected
+    payload: meta.Select('self.flags.long_packet_type', cases={
+        int(PacketType.INITIAL): InitialPacketPayload,
+        int(PacketType.RETRY): RetryPacketPayload
+    })
+
 
 @meta.struct
 class InitialPacket(meta.MetaStruct):
@@ -102,102 +133,22 @@ class InitialPacket(meta.MetaStruct):
     version: Uint32
     dest_conn_id: OpaqueUint8
     src_conn_id: OpaqueUint8
-    token: Opaque(VarLenIntEncoding)
+    token: OpaqueVarLenIntEncoding
     length: VarLenIntEncoding
     packet_number: Opaque(lambda self: self.flags.type_specific_bits_lsb2bit + 1)
     packet_payload: Opaque(lambda self: int(self.length) - self.packet_number.get_size())
 
     def get_header_bytes(self):
-        # AEAD Auth Data
-        return bytes(self.flags) + bytes(self.version) + bytes(self.dest_conn_id) + \
-               bytes(self.src_conn_id) + bytes(self.token) + bytes(self.length) + \
-               bytes(self.packet_number)
+        return create_aad(self.flags, self.version, self.dest_conn_id, self.src_conn_id, \
+                          self.token, self.length, self.packet_number)
 
     def get_packet_number_int(self):
         return int.from_bytes(bytes(self.packet_number), 'big')
 
-
-
-
-
-
-from protocol_tls13_handshake import Handshake
-
-class FrameType(Enum):
-    elem_t = VarLenIntEncoding
-
-    PADDING = VarLenIntEncoding(Uint8(0x00))
-    ACK = VarLenIntEncoding(Uint8(0x02))
-    CRYPTO = VarLenIntEncoding(Uint8(0x06))
-
-# PADDING Frame {
-#   Type (i) = 0x00,
-# }
-class Padding(Type):
-    def __init__(self, padding: bytes):
-        self.padding = padding
-
-    @classmethod
-    def from_stream(cls, fs, parent=None):
-        padding = bytearray()
-        while True:
-            data = fs.read(1)
-            if len(data) <= 0:
-                break
-            if data == b'\x00':
-                padding.append(ord(data))
-            else:
-                fs.seek(-1, 1) # seek -1 from current position (1)
-        return Padding(padding)
-
-    def __bytes__(self):
-        return self.padding
-
-    def __repr__(self):
-        return 'Padding[%d]' % (len(self.padding) + 1)
-
-# ACK Frame {
-#   Type (i) = 0x02..0x03,
-#   Largest Acknowledged (i),
-#   ACK Delay (i),
-#   ACK Range Count (i),
-#   First ACK Range (i),
-#   ACK Range (..) ...,
-#   [ECN Counts (..)],           <= only exists when type is 0x03
-# }
-@meta.struct
-class AckRange(meta.MetaStruct):
-    gap: VarLenIntEncoding
-    ack_range_length: VarLenIntEncoding
-
-@meta.struct
-class AckFrame(meta.MetaStruct):
-    largest_acknowledged: VarLenIntEncoding
-    ack_delay: VarLenIntEncoding
-    ack_range_count: VarLenIntEncoding   # ここは0しか入らないとして、ACK Rangesのことは考えない
-    first_ack_range: VarLenIntEncoding
-    # ack_range: AckRange
-
-# CRYPTO Frame {
-#   Type (i) = 0x06,
-#   Offset (i),
-#   Length (i),
-#   Crypto Data (..),
-# }
-@meta.struct
-class CryptoFrame(meta.MetaStruct):
-    offset: VarLenIntEncoding
-    length: VarLenIntEncoding
-    data: Handshake
-
-@meta.struct
-class Frame(meta.MetaStruct):
-    frame_type: FrameType
-    frame_content: meta.Select('frame_type', cases={
-        FrameType.PADDING: Padding,
-        FrameType.ACK: AckFrame,
-        FrameType.CRYPTO: CryptoFrame,
-    })
-
-
+def create_aad(flags: LongPacketFlags, version: Uint32, dest_conn_id: OpaqueUint8,
+               src_conn_id: OpaqueUint8, token: OpaqueVarLenIntEncoding,
+               length: VarLenIntEncoding, packet_number):
+    return bytes(flags) + bytes(version) + bytes(dest_conn_id) + \
+           bytes(src_conn_id) + bytes(token) + bytes(length) + \
+           bytes(packet_number)
 
