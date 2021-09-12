@@ -7,8 +7,8 @@ from protocol_longpacket import LongPacket, PacketType, InitialPacket
 from protocol_frame import Frame
 
 ## 切り替えて使うこと!!
-msg_sender = 'client'
-# msg_sender = 'server'
+# msg_sender = 'client'
+msg_sender = 'server'
 
 if msg_sender == 'client':
     # Client Inital Packet
@@ -89,13 +89,17 @@ print(hexdump(server_iv))
 print('server_hp:')
 print(hexdump(server_hp))
 
-# --- 2. Header Protectionを解除する ---
-
 if msg_sender == 'client':
+    cs_key = client_key
+    cs_iv = client_iv
     cs_hp = client_hp
 else:
+    cs_key = server_key
+    cs_iv = server_iv
     cs_hp = server_hp
-recv_packet_bytes = header_protection(recv_packet, cs_hp)
+
+# --- 2. Header Protectionを解除する ---
+recv_packet_bytes = header_protection(recv_packet, cs_hp, mode='decrypt')
 
 # --- 3. Payloadの暗号文を復号する ---
 
@@ -106,12 +110,6 @@ print(initial_packet)
 print(hexdump(initial_packet_bytes))
 
 ciphertext_payload_bytes = bytes(initial_packet.packet_payload)
-if msg_sender == 'client':
-    cs_key = client_key
-    cs_iv = client_iv
-else:
-    cs_key = server_key
-    cs_iv = server_iv
 aad = initial_packet.get_header_bytes()  # Additional Auth Data
 packet_number = initial_packet.get_packet_number_int()
 plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, cs_key, cs_iv, aad, packet_number)

@@ -98,6 +98,20 @@ class MetaStruct(Type):
             setattr(instance, name, elem)
         return instance
 
+    # 値をプロパティに直接代入した時に親参照を再設定する処理
+    def update(self):
+        cls = self.__class__
+        # instance = cls.create_empty()
+        # instance.set_parent(self.parent)
+        for name, field in cls.get_struct().items():
+            # それぞれの値の親参照を自身に設定
+            elem = getattr(self, name)
+            if getattr(elem, 'set_parent', None):
+                elem.set_parent(self)
+            # 値を構造体へ格納
+            # setattr(instance, name, elem)
+        # return instance
+
     @classmethod
     def get_struct(cls):
         return cls.__dataclass_fields__
@@ -123,7 +137,7 @@ class MetaStruct(Type):
                 # その他の要素は出力が1行なので、コンソールの幅を超えないように折返し出力させる
                 nest = self.count_ancestors() + 2
                 output = '\n  '.join(
-                    textwrap.wrap(output, width=shutil.get_terminal_size().columns-(nest*2)))
+                    textwrap.wrap(output, width=shutil.get_terminal_size().columns-(nest*3)))
             elems.append('+ ' + output)
         return title + "\n".join(elems)
 

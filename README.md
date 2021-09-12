@@ -15,6 +15,10 @@ git clone https://github.com/cloudflare/quiche
 cp quiche /opt/quiche
 ```
 
+```
+cd /opt/quiche
+```
+
 サーバ側：
 ```
 cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-server -- \
@@ -26,7 +30,4 @@ cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-server -- \
 ```
 cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-client -- https://localhost:4433/ --no-verify
 ```
-
-
-
 

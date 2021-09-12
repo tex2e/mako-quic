@@ -3,6 +3,7 @@ from metatype import Type, Enum, List
 from metatype import Uint32, Opaque, OpaqueUint8, VarLenIntEncoding, OpaqueVarLenIntEncoding
 import metastruct as meta
 from utils import hexdump
+from protocol_quic import HeaderForm
 
 class PacketType(Enum):
     INITIAL   = 0x00
@@ -17,14 +18,20 @@ class PacketType(Enum):
 #   Type-Specific Bits (4),
 
 class LongPacketFlags(Type):
-    def __init__(self, header_form=1, fixed_bit=1,
-                       long_packet_type=0, type_specific_bits=0):
+    def __init__(self, header_form=HeaderForm.LONG, fixed_bit=1,
+                       long_packet_type=0, type_specific_bits=0,
+                       type_specific_bits_msb2bit=None, type_specific_bits_lsb2bit=None):
         self.header_form = header_form
         self.fixed_bit = fixed_bit
         self.long_packet_type = int(long_packet_type)
-        self.type_specific_bits = type_specific_bits
-        self.type_specific_bits_msb2bit = (type_specific_bits & 0b1100) >> 2
-        self.type_specific_bits_lsb2bit = (type_specific_bits & 0b0011) >> 0
+        if (type_specific_bits_msb2bit is None) and (type_specific_bits_lsb2bit is None):
+            self.type_specific_bits = type_specific_bits
+            self.type_specific_bits_msb2bit = (type_specific_bits & 0b1100) >> 2
+            self.type_specific_bits_lsb2bit = (type_specific_bits & 0b0011) >> 0
+        else:
+            self.type_specific_bits_msb2bit = type_specific_bits_msb2bit
+            self.type_specific_bits_lsb2bit = type_specific_bits_lsb2bit
+            self.type_specific_bits = type_specific_bits_msb2bit << 2 + type_specific_bits_lsb2bit
 
     @classmethod
     def from_stream(cls, fs, parent=None):

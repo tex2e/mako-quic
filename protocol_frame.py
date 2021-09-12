@@ -50,12 +50,14 @@ class Padding(Type):
 class AckRange(meta.MetaStruct):
     gap: VarLenIntEncoding
     ack_range_length: VarLenIntEncoding
+# ECN (Explicit Congestion Notification)
+#   輻輳が発生したことを通知するときに用いられる。
 
 @meta.struct
 class AckFrame(meta.MetaStruct):
     largest_acknowledged: VarLenIntEncoding
     ack_delay: VarLenIntEncoding
-    ack_range_count: VarLenIntEncoding   # ここは0しか入らないとして、ACK Rangesのことは考えない
+    ack_range_count: VarLenIntEncoding   # ここは0しか入らないとして、今はACK Rangesのことは考えない
     first_ack_range: VarLenIntEncoding
     # ack_range: AckRange
 

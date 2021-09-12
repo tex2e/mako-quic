@@ -136,7 +136,7 @@ class VarLenIntEncoding(Type):
         return bytes(byte)
 
     def __repr__(self):
-        return 'Quic' + repr(self.value)
+        return 'VarLenIntEncoding' + repr(self.value)
 
     def _get_size(self):
         size = self.size_t.size

@@ -27,7 +27,8 @@ def get_client_server_key_iv_hp(client_dst_connection_id):
 
 # --- ヘッダー保護・解除 ---
 
-def header_protection(long_packet, sc_hp_key) -> bytes:
+def header_protection(long_packet, sc_hp_key, mode=None, debug=False) -> bytes:
+    assert mode in ('encrypt', 'decrypt')
     recv_packet_bytes = bytes(long_packet)
 
     def get_np_offset_and_sample_offset(long_packet) -> (int, int):
@@ -46,8 +47,9 @@ def header_protection(long_packet, sc_hp_key) -> bytes:
 
     sample_length = 16
     sample = recv_packet_bytes[sample_offset:sample_offset+sample_length]
-    # print('sample:')
-    # print(hexdump(sample))
+    if debug:
+        print('sample:')
+        print(hexdump(sample))
 
     def generate_mask(hp_key, sample) -> bytes:
         cipher = Cipher(algorithms.AES(key=hp_key), modes.ECB())
@@ -57,8 +59,13 @@ def header_protection(long_packet, sc_hp_key) -> bytes:
         return mask
 
     mask = generate_mask(sc_hp_key, sample)
-    # print('mask:')
-    # print(hexdump(mask))
+    if debug:
+        print('mask:')
+        print(hexdump(mask))
+
+    if mode == 'encrypt':
+        # ヘッダ保護前にパケット番号の長さ取得
+        pn_length = (recv_packet_bytes[0] & 0x03) + 1
 
     recv_packet_bytes = bytearray(recv_packet_bytes)
     if (recv_packet_bytes[0] & 0x80) == 0x80:
@@ -68,8 +75,9 @@ def header_protection(long_packet, sc_hp_key) -> bytes:
         # Short header: 5 bits masked
         recv_packet_bytes[0] ^= mask[0] & 0x1f
 
-    # ヘッダ保護解除後にパケット番号の長さ取得
-    pn_length = (recv_packet_bytes[0] & 0x03) + 1
+    if mode == 'decrypt':
+        # ヘッダ保護解除後にパケット番号の長さ取得
+        pn_length = (recv_packet_bytes[0] & 0x03) + 1
 
     recv_packet_bytes[pn_offset:pn_offset+pn_length] = \
         bytexor(recv_packet_bytes[pn_offset:pn_offset+pn_length], mask[1:1+pn_length])
