@@ -132,9 +132,7 @@ initial_packet.update()
 print(initial_packet)
 
 send_packet = LongPacket.from_bytes(bytes(initial_packet))
-
 send_packet_bytes = header_protection(send_packet, cs_hp, mode='encrypt', debug=True)
-
 print('encrypted packet:')
 print(hexdump(send_packet_bytes))
 
