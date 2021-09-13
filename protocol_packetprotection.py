@@ -86,15 +86,16 @@ def header_protection(long_packet, sc_hp_key, mode=None, debug=False) -> bytes:
 
 # --- Payload暗号化・復号 ---
 
-def _enc_dec_payload(input_bytes, key, iv, aad, packet_number, mode='encrypt'):
+def _enc_dec_payload(input_bytes, key, iv, aad, packet_number, mode='encrypt', debug=False):
     packet_number_bytes = packet_number.to_bytes(len(iv), 'big')
-    # print('packet_number:')
-    # print(hexdump(packet_number_bytes))
     nonce = bytexor(packet_number_bytes, iv)
-    # print('nonce:')
-    # print(hexdump(nonce))
-    # print('aad:')
-    # print(hexdump(aad))
+    if debug:
+        print('packet_number:')
+        print(hexdump(packet_number_bytes))
+        print('nonce:')
+        print(hexdump(nonce))
+        print('aad:')
+        print(hexdump(aad))
     aesgcm = AESGCM(key=key)
     output_bytes = b''
     if mode == 'encrypt':

@@ -155,6 +155,13 @@ class InitialPacket(meta.MetaStruct):
 def create_aad(flags: LongPacketFlags, version: Uint32, dest_conn_id: OpaqueUint8,
                src_conn_id: OpaqueUint8, token: OpaqueVarLenIntEncoding,
                length: VarLenIntEncoding, packet_number):
+    assert flags is not None
+    assert version is not None
+    assert dest_conn_id is not None
+    assert src_conn_id is not None
+    assert token is not None
+    assert length is not None
+    assert packet_number is not None
     return bytes(flags) + bytes(version) + bytes(dest_conn_id) + \
            bytes(src_conn_id) + bytes(token) + bytes(length) + \
            bytes(packet_number)

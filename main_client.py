@@ -25,12 +25,11 @@ class ClientConn:
 # print(res)
 
 
-# TODO: 暗号化の手順が間違っているのでmain_enc.pyを参考に後で修正する
-
 from utils import hexdump
-from metatype import Uint8, Uint16, Opaque, OpaqueUint8, OpaqueUint16, OpaqueLength, VarLenIntEncoding, OpaqueVarLenIntEncoding, List
-from protocol_quic import QUICVersions
-from protocol_longpacket import InitialPacket, LongPacketFlags, PacketType
+from metatype import Uint8, Uint16, Uint32, Opaque, OpaqueUint8, OpaqueUint16, OpaqueLength, VarLenIntEncoding, OpaqueVarLenIntEncoding, List
+from protocol_quic import QUICVersions, HeaderForm
+from protocol_longpacket import InitialPacket, LongPacket, LongPacketFlags, PacketType
+from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
 from protocol_frame import Frame, FrameType, CryptoFrame
 from protocol_tls13_handshake import Handshake, HandshakeType
 from protocol_tls13_hello import ClientHello
@@ -41,6 +40,7 @@ from protocol_tls13_ext_supportedgroups import NamedGroupList, NamedGroups, Name
 from protocol_tls13_ext_signature import SignatureSchemeList, SignatureSchemes, SignatureScheme
 from protocol_tls13_ext_keyshare import KeyShareHello, KeyShareEntrys, KeyShareEntry
 from protocol_tls13_ext_servername import ServerNameIndications, ServerNameIndication, ServerNameIndicationType
+
 
 public_key = bytes.fromhex('6923bcdc7b80831a7f0d6fdfddb8e1b5e2f042cb1991cb19fd7ad9bce444fe63')
 
@@ -113,63 +113,76 @@ crypto_frame = Frame(
     )
 )
 crypto_frame_len = len(bytes(crypto_frame))
-padding_frame_len = 1200 - crypto_frame_len
+
+client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
+
+packet_number = 1
+initial_packet = InitialPacket(
+    flags=LongPacketFlags(header_form=HeaderForm.LONG, fixed_bit=1,
+                          long_packet_type=PacketType.INITIAL, type_specific_bits=0b0011),
+    version=QUICVersions.QUICv1,
+    dest_conn_id=OpaqueUint8(client_dst_connection_id),
+    src_conn_id=OpaqueUint8(bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')),
+    token=OpaqueVarLenIntEncoding(b''),
+    length=None,
+    packet_number=Uint32(packet_number),
+    packet_payload=None
+)
+
+packet_number_len = (initial_packet.flags.type_specific_bits & 0x03) + 1  # バケット番号長
+aead_tag_len = 16
+length_len = Uint16.size
+
+# Clientが送信するInitial Packetを含むUDPペイロードは1200バイト以上にしないといけない (MUST)
+padding_frame_len = 1200 - 5 - len(bytes(initial_packet.dest_conn_id)) - len(bytes(initial_packet.src_conn_id)) - len(bytes(initial_packet.token)) - length_len - packet_number_len - crypto_frame_len - aead_tag_len
+print('[+] padding_frame_len:', padding_frame_len)
+
+# 1200バイト以上になるようにパディング追加
 padding_frame = Frame(
     frame_type=FrameType.PADDING,
     frame_content=b'\x00' * padding_frame_len
 )
-
 Frames = List(size_t=lambda x: None, elem_t=Frame)
 frames = Frames([
     crypto_frame,
-    # padding_frame,
+    padding_frame,
 ])
-print(frames)
-print('[+] crypto_frame_len: ', crypto_frame_len)
-
-frames_bytes = bytes(frames)
-
-initial_packet = InitialPacket(
-    flags=LongPacketFlags(header_form=1, fixed_bit=1,
-                          long_packet_type=PacketType.INITIAL, type_specific_bits=0),
-    version=QUICVersions.QUICv1,
-    dest_conn_id=OpaqueUint8(bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')),
-    src_conn_id=OpaqueUint8(bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')),
-    token=OpaqueVarLenIntEncoding(b''),
-    length=VarLenIntEncoding(Uint16(len(frames_bytes))),
-    # length=VarLenIntEncoding(Uint16(crypto_frame_len)),
-    packet_number=Uint8(1),
-    packet_payload=OpaqueLength(frames_bytes)
-)
+plaintext_payload_bytes = bytes(frames)
+initial_packet.packet_payload = plaintext_payload_bytes
+initial_packet.length = VarLenIntEncoding(Uint16(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len))
+initial_packet.update()
 print('=== send packed ===')
 print(initial_packet)
 
-###
-from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
-## 切り替えて使うこと!!
-msg_sender = 'client'
-# msg_sender = 'server'
-client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
 client_key, client_iv, client_hp, server_key, server_iv, server_hp = \
     get_client_server_key_iv_hp(client_dst_connection_id)
-if msg_sender == 'client':
-    cs_key = client_key
-    cs_iv = client_iv
-else:
-    cs_key = server_key
-    cs_iv = server_iv
+cs_key = client_key
+cs_iv = client_iv
+cs_hp = client_hp
+
+print('>>>')
+print(initial_packet.token)
+print(bytes(initial_packet.token))
 aad = initial_packet.get_header_bytes()
-packet_number = initial_packet.get_packet_number_int()
-encrypted_frames_bytes = encrypt_payload(frames_bytes, cs_key, cs_iv, aad, packet_number)
-initial_packet.packet_payload = OpaqueLength(encrypted_frames_bytes)
-initial_packet.length = VarLenIntEncoding(Uint16(len(encrypted_frames_bytes)))
-print('>>>', len(encrypted_frames_bytes), len(frames_bytes))
-###
+print('aad:')
+print(hexdump(aad))
 
+ciphertext_payload_bytes = encrypt_payload(plaintext_payload_bytes, cs_key, cs_iv, aad, packet_number)
 
-# InitialPacketを暗号化＆ヘッダ保護してから送信する
+print('encrypted:')
+print(hexdump(ciphertext_payload_bytes))
 
-from protocol_longpacket import LongPacket
+initial_packet.length = VarLenIntEncoding(Uint16(len(ciphertext_payload_bytes) + packet_number_len))
+initial_packet.packet_payload = OpaqueLength(ciphertext_payload_bytes)
+initial_packet.update()
+print(initial_packet)
+
+send_packet = LongPacket.from_bytes(bytes(initial_packet))
+send_packet_bytes = header_protection(send_packet, cs_hp, mode='encrypt', debug=True)
+print('encrypted packet:')
+print(hexdump(send_packet_bytes))
+print('[+] len(send_packet_bytes):', len(send_packet_bytes))
+
 conn = ClientConn('127.0.0.1', 4433)
 res = conn.sendto(bytes(initial_packet))
 print(res)
@@ -184,51 +197,65 @@ print('=== recv packed ===')
 print(recv_packet)
 print(hexdump(recv_packet_bytes))
 
-# TODO: 受信したRetryパケットからtokenを取り出して、ClientHelloを含むQUICパケットを作って送る
+# import sys
+# sys.exit()
+
+# --- 2回目 ---------------------------------------------------------------------
+
+# 受信したRetryパケットからtokenを取り出して、ClientHelloを含むQUICパケットを作って送る
 
 print('---')
-print(recv_packet.payload.retry_token)
 retry_token = recv_packet.payload.retry_token
-
+client_dst_connection_id = recv_packet.src_conn_id.byte
+print('[+] server conn id:')
+print(hexdump(recv_packet.src_conn_id.byte))
+print('[+] retry_token:', retry_token)
 
 # Send InitailPacket after Retry
 
+packet_number = 2
 initial_packet = InitialPacket(
-    flags=LongPacketFlags(header_form=1, fixed_bit=1,
-                          long_packet_type=PacketType.INITIAL, type_specific_bits=0),
+    flags=LongPacketFlags(header_form=HeaderForm.LONG, fixed_bit=1,
+                        long_packet_type=PacketType.INITIAL, type_specific_bits=0b0011),
     version=QUICVersions.QUICv1,
-    dest_conn_id=OpaqueUint8(bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')),
+    dest_conn_id=OpaqueUint8(client_dst_connection_id),
     src_conn_id=OpaqueUint8(bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')),
     token=OpaqueVarLenIntEncoding(retry_token),
-    length=VarLenIntEncoding(Uint16(len(frames_bytes))),
-    packet_number=Uint8(2),
-    packet_payload=OpaqueLength(frames_bytes)
+    length=VarLenIntEncoding(Uint16(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len)),
+    packet_number=Uint32(packet_number),
+    packet_payload=plaintext_payload_bytes
 )
 print('=== send packed ===')
 print(initial_packet)
 
-###
-from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
-## 切り替えて使うこと!!
-msg_sender = 'client'
-# msg_sender = 'server'
-client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
+# client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
 client_key, client_iv, client_hp, server_key, server_iv, server_hp = \
     get_client_server_key_iv_hp(client_dst_connection_id)
-if msg_sender == 'client':
-    cs_key = client_key
-    cs_iv = client_iv
-else:
-    cs_key = server_key
-    cs_iv = server_iv
-aad = initial_packet.get_header_bytes()
-packet_number = initial_packet.get_packet_number_int()
-encrypted_frames_bytes = encrypt_payload(frames_bytes, cs_key, cs_iv, aad, packet_number)
-initial_packet.packet_payload = OpaqueLength(encrypted_frames_bytes)
-initial_packet.length = VarLenIntEncoding(Uint16(len(encrypted_frames_bytes)))
-print('>>>', len(encrypted_frames_bytes), len(frames_bytes))
-###
+cs_key = client_key
+cs_iv = client_iv
+cs_hp = client_hp
 
+aad = initial_packet.get_header_bytes()
+print('aad:')
+print(hexdump(aad))
+
+ciphertext_payload_bytes = encrypt_payload(plaintext_payload_bytes, cs_key, cs_iv, aad, packet_number)
+
+print('encrypted:')
+print(hexdump(ciphertext_payload_bytes))
+
+initial_packet.length = VarLenIntEncoding(Uint16(len(ciphertext_payload_bytes) + packet_number_len))
+initial_packet.packet_payload = OpaqueLength(ciphertext_payload_bytes)
+initial_packet.update()
+print(initial_packet)
+
+send_packet = LongPacket.from_bytes(bytes(initial_packet))
+send_packet_bytes = header_protection(send_packet, cs_hp, mode='encrypt', debug=True)
+print('encrypted packet:')
+print(hexdump(send_packet_bytes))
+print('[+] len(send_packet_bytes):', len(send_packet_bytes))
+
+conn = ClientConn('127.0.0.1', 4433)
 res = conn.sendto(bytes(initial_packet))
 print(res)
 res = conn.recvfrom()
