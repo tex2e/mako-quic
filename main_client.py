@@ -113,6 +113,7 @@ crypto_frame = Frame(
     )
 )
 crypto_frame_len = len(bytes(crypto_frame))
+# TODO: バイト列にしたときにCRYPTO FrameのLengthが不一致のため、要修正
 
 client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
 
@@ -159,6 +160,12 @@ client_key, client_iv, client_hp, server_key, server_iv, server_hp = \
 cs_key = client_key
 cs_iv = client_iv
 cs_hp = client_hp
+# print('cs_key:')
+# print(hexdump(cs_key))
+# print('cs_iv:')
+# print(hexdump(cs_iv))
+# print('cs_hp:')
+# print(hexdump(cs_hp))
 
 print('>>>')
 print(initial_packet.token)
@@ -184,7 +191,7 @@ print(hexdump(send_packet_bytes))
 print('[+] len(send_packet_bytes):', len(send_packet_bytes))
 
 conn = ClientConn('127.0.0.1', 4433)
-res = conn.sendto(bytes(initial_packet))
+res = conn.sendto(send_packet_bytes)
 print(res)
 res = conn.recvfrom()
 print(res)
@@ -234,6 +241,12 @@ client_key, client_iv, client_hp, server_key, server_iv, server_hp = \
 cs_key = client_key
 cs_iv = client_iv
 cs_hp = client_hp
+print('cs_key:')
+print(hexdump(cs_key))
+print('cs_iv:')
+print(hexdump(cs_iv))
+print('cs_hp:')
+print(hexdump(cs_hp))
 
 aad = initial_packet.get_header_bytes()
 print('aad:')
@@ -250,13 +263,15 @@ initial_packet.update()
 print(initial_packet)
 
 send_packet = LongPacket.from_bytes(bytes(initial_packet))
+# print('before encrypted packet:')
+# print(hexdump(bytes(send_packet)))
 send_packet_bytes = header_protection(send_packet, cs_hp, mode='encrypt', debug=True)
 print('encrypted packet:')
 print(hexdump(send_packet_bytes))
 print('[+] len(send_packet_bytes):', len(send_packet_bytes))
 
 conn = ClientConn('127.0.0.1', 4433)
-res = conn.sendto(bytes(initial_packet))
+res = conn.sendto(send_packet_bytes)
 print(res)
 res = conn.recvfrom()
 print(res)
