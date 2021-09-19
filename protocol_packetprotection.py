@@ -1,4 +1,5 @@
 
+from typing import Tuple
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from protocol_keyschedule import HKDF_extract, HKDF_expand_label
@@ -31,7 +32,7 @@ def header_protection(long_packet, sc_hp_key, mode=None, debug=False) -> bytes:
     assert mode in ('encrypt', 'decrypt')
     recv_packet_bytes = bytes(long_packet)
 
-    def get_np_offset_and_sample_offset(long_packet) -> (int, int):
+    def get_np_offset_and_sample_offset(long_packet) -> Tuple[int, int]:
         # pn_offset is the start of the Packet Number field.
         pn_offset = 7 + len(long_packet.dest_conn_id) + \
                         len(long_packet.src_conn_id) + \

@@ -70,7 +70,7 @@ class AckFrame(meta.MetaStruct):
 @meta.struct
 class CryptoFrame(meta.MetaStruct):
     offset: VarLenIntEncoding
-    length: VarLenIntEncoding
+    length: VarLenIntEncoding = lambda self: VarLenIntEncoding(Uint32(len(bytes(self.data))))
     data: Handshake
 
 @meta.struct

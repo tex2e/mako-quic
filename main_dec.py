@@ -7,8 +7,8 @@ from protocol_longpacket import LongPacket, PacketType, InitialPacket
 from protocol_frame import Frame
 
 ## 切り替えて使うこと!!
-# msg_sender = 'client'
-msg_sender = 'server'
+msg_sender = 'client'
+# msg_sender = 'server'
 
 if msg_sender == 'client':
     # Client Inital Packet

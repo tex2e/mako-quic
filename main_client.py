@@ -40,6 +40,8 @@ from protocol_tls13_ext_supportedgroups import NamedGroupList, NamedGroups, Name
 from protocol_tls13_ext_signature import SignatureSchemeList, SignatureSchemes, SignatureScheme
 from protocol_tls13_ext_keyshare import KeyShareHello, KeyShareEntrys, KeyShareEntry
 from protocol_tls13_ext_servername import ServerNameIndications, ServerNameIndication, ServerNameIndicationType
+from protocol_tls13_ext_alpn import ALPNProtocols
+from protocol_tls13_ext_quic_transportparam import QuicTransportParam, QuicTransportParams, QuicTransportParamType
 
 
 public_key = bytes.fromhex('6923bcdc7b80831a7f0d6fdfddb8e1b5e2f042cb1991cb19fd7ad9bce444fe63')
@@ -48,7 +50,6 @@ crypto_frame = Frame(
     frame_type=FrameType.CRYPTO,
     frame_content=CryptoFrame(
         offset=VarLenIntEncoding(Uint8(0)),
-        length=VarLenIntEncoding(Uint16(1000)),
         data=Handshake(
             msg_type=HandshakeType.client_hello,
             msg=ClientHello(
@@ -56,9 +57,8 @@ crypto_frame = Frame(
                 legacy_session_id=OpaqueUint8(b''),
                 cipher_suites=CipherSuites([
                     CipherSuite.TLS_AES_128_GCM_SHA256,
-                    CipherSuite.TLS_AES_256_GCM_SHA384,
-                    CipherSuite.TLS_CHACHA20_POLY1305_SHA256,
-                    # CipherSuite.TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+                    # CipherSuite.TLS_AES_256_GCM_SHA384,
+                    # CipherSuite.TLS_CHACHA20_POLY1305_SHA256,
                 ]),
                 extensions=Extensions([
                     Extension(
@@ -87,6 +87,12 @@ crypto_frame = Frame(
                         )
                     ),
                     Extension(
+                        extension_type=ExtensionType.application_layer_protocol_negotiation,
+                        extension_data=ALPNProtocols([
+                            OpaqueUint8(b'h3')
+                        ])
+                    ),
+                    Extension(
                         extension_type=ExtensionType.signature_algorithms,
                         extension_data=SignatureSchemeList(
                             supported_signature_algorithms=SignatureSchemes([
@@ -106,6 +112,59 @@ crypto_frame = Frame(
                                 )
                             ])
                         )
+                    ),
+                    Extension(
+                        extension_type=ExtensionType.quic_transport_parameters,
+                        extension_data=QuicTransportParams([
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.max_idle_timeout,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(30000))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.max_udp_payload_size,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(1350))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_data,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(10000000))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_stream_data_bidi_local,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_stream_data_bidi_remote,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_stream_data_uni,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_streams_bidi,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_max_streams_uni,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.ack_delay_exponent,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(3))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.max_ack_delay,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(25))))
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.disable_active_migration,
+                                param_value=OpaqueVarLenIntEncoding(b'')
+                            ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.initial_source_connection_id,
+                                param_value=OpaqueUint8(bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab'))
+                            ),
+                        ])
                     )
                 ]),
             )
@@ -113,7 +172,6 @@ crypto_frame = Frame(
     )
 )
 crypto_frame_len = len(bytes(crypto_frame))
-# TODO: バイト列にしたときにCRYPTO FrameのLengthが不一致のため、要修正
 
 client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
 
@@ -203,9 +261,6 @@ recv_packet_bytes = bytes(recv_packet)
 print('=== recv packed ===')
 print(recv_packet)
 print(hexdump(recv_packet_bytes))
-
-# import sys
-# sys.exit()
 
 # --- 2回目 ---------------------------------------------------------------------
 
