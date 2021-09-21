@@ -41,7 +41,6 @@ def header_protection(long_packet, sc_hp_key, mode=None, debug=False) -> bytes:
             pn_offset += len(bytes(long_packet.payload.token))
 
         sample_offset = pn_offset + 4
-
         return pn_offset, sample_offset
 
     pn_offset, sample_offset = get_np_offset_and_sample_offset(long_packet)

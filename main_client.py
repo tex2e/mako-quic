@@ -30,7 +30,7 @@ from utils import hexdump
 from metatype import Uint8, Uint16, Uint32, Opaque, OpaqueUint8, OpaqueUint16, OpaqueLength, VarLenIntEncoding, OpaqueVarLenIntEncoding, List
 from protocol_quic import QUICVersions, HeaderForm
 from protocol_longpacket import InitialPacket, LongPacket, LongPacketFlags, PacketType
-from protocol_packetprotection import get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
+from protocol_packetprotection import get_key_iv_hp, get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
 from protocol_frame import Frame, FrameType, CryptoFrame
 from protocol_tls13_handshake import Handshake, HandshakeType
 from protocol_tls13_hello import ClientHello
@@ -43,12 +43,18 @@ from protocol_tls13_ext_keyshare import KeyShareHello, KeyShareEntrys, KeyShareE
 from protocol_tls13_ext_servername import ServerNameIndications, ServerNameIndication, ServerNameIndicationType
 from protocol_tls13_ext_alpn import ALPNProtocols
 from protocol_tls13_ext_quic_transportparam import QuicTransportParam, QuicTransportParams, QuicTransportParamType
+from protocol_tls13_ctx import TLSContext
+from crypto_x25519 import x25519
+
+ctx = TLSContext('client')
 
 peer_ipaddr = '127.0.0.1'
 peer_port = 4433
 peer = (peer_ipaddr, peer_port)
 
-public_key = bytes.fromhex('6923bcdc7b80831a7f0d6fdfddb8e1b5e2f042cb1991cb19fd7ad9bce444fe63')
+dhkex_class = x25519
+secret_key = bytes.fromhex('6923bcdc7b80831a7f0d6fdfddb8e1b5e2f042cb1991cb19fd7ad9bce444fe63')
+public_key = dhkex_class(secret_key)
 
 crypto_frame = Frame(
     frame_type=FrameType.CRYPTO,
@@ -170,12 +176,13 @@ crypto_frame = Frame(
                             ),
                         ])
                     )
-                ]),
+                ])
             )
         )
     )
 )
 crypto_frame_len = len(bytes(crypto_frame))
+ctx.append_msg(crypto_frame.frame_content.data)
 
 client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
 client_src_connection_id = bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')
@@ -222,14 +229,11 @@ packet_number_len = (initial_packet.flags.type_specific_bits & 0x03) + 1  # バ�
 initial_packet.packet_payload = plaintext_payload_bytes
 initial_packet.length = VarLenIntEncoding(LengthType(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len))
 initial_packet.update()
-print('=== send packet ===')
+print('=== Send packet ===')
 print(initial_packet)
 
 client_key, client_iv, client_hp_key, server_key, server_iv, server_hp_key = \
     get_client_server_key_iv_hp(client_dst_connection_id)
-# cs_key = client_key
-# cs_iv = client_iv
-# cs_hp = client_hp
 
 aad = initial_packet.get_header_bytes()
 print('aad:')
@@ -260,7 +264,7 @@ recv_msg, addr = res
 
 recv_packet = LongPacket.from_bytes(recv_msg)
 recv_packet_bytes = bytes(recv_packet)
-print('=== recv packet ===')
+print('=== Recv packet ===')
 print(recv_packet)
 # print(hexdump(recv_packet_bytes))
 
@@ -309,20 +313,11 @@ if PacketType(recv_packet.flags.long_packet_type) == PacketType.RETRY:
     initial_packet.length = VarLenIntEncoding(LengthType(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len))
     initial_packet.update()
 
-    print('=== send packet ===')
+    print('=== Send packet ===')
     print(initial_packet)
 
     client_key, client_iv, client_hp_key, server_key, server_iv, server_hp_key = \
         get_client_server_key_iv_hp(client_dst_connection_id)
-    # cs_key = client_key
-    # cs_iv = client_iv
-    # cs_hp = client_hp
-    # print('cs_key:')
-    # print(hexdump(cs_key))
-    # print('cs_iv:')
-    # print(hexdump(cs_iv))
-    # print('cs_hp:')
-    # print(hexdump(cs_hp))
 
     aad = initial_packet.get_header_bytes()
     print('aad:')
@@ -348,12 +343,11 @@ if PacketType(recv_packet.flags.long_packet_type) == PacketType.RETRY:
     res = conn.sendto(send_packet_bytes)
     # print(res)
     res = conn.recvfrom()
-    print(res)
+    # print(res)
     recv_msg, addr = res
 
     recv_packet = LongPacket.from_bytes(recv_msg)
-    recv_packet_bytes = bytes(recv_packet)
-    print('=== recv packet ===')
+    print('=== Recv packet ===')
     print(recv_packet)
 
 
@@ -361,6 +355,86 @@ if PacketType(recv_packet.flags.long_packet_type) != PacketType.INITIAL:
     print("Error!")
     sys.exit(1)
 
-server_initial_packet = InitialPacket.from_bytes(recv_packet_bytes)
+print('---')
+print('client_key:')
+print(hexdump(client_key))
+print('client_iv:')
+print(hexdump(client_iv))
+print('client_hp_key:')
+print(hexdump(client_hp_key))
+print('server_key:')
+print(hexdump(server_key))
+print('server_iv:')
+print(hexdump(server_iv))
+print('server_hp_key:')
+print(hexdump(server_hp_key))
+
 print('=== Recv server initial packet ===')
+server_initial_packet_bytes = header_protection(recv_packet, server_hp_key, mode='decrypt')
+
+print('---')
+server_initial_packet = InitialPacket.from_bytes(server_initial_packet_bytes)
+server_initial_packet_bytes = bytes(server_initial_packet)
 print(server_initial_packet)
+print(hexdump(server_initial_packet_bytes))
+
+ciphertext_payload_bytes = bytes(server_initial_packet.packet_payload)
+aad = server_initial_packet.get_header_bytes()  # Additional Auth Data
+packet_number = server_initial_packet.get_packet_number_int()
+plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_key, server_iv, aad, packet_number)
+print('decrypted:')
+print(hexdump(plaintext_payload_bytes))
+
+# Framesの解析
+print('-----')
+Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
+
+frames = Frames.from_bytes(plaintext_payload_bytes)
+print(frames)
+
+print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+server_hello = frames[1].frame_content.data
+print('>>>', server_hello.msg.cipher_suite)
+ctx.append_msg(server_hello)
+# 共有鍵の導出
+ctx.set_key_exchange(dhkex_class, secret_key)
+ctx.key_schedule_in_handshake()
+# print('shared_key:')
+# print(hexdump(ctx.shared_key))
+print('client_hs_traffic_secret:')
+print(hexdump(ctx.client_hs_traffic_secret))
+print('server_hs_traffic_secret:')
+print(hexdump(ctx.server_hs_traffic_secret))
+
+client_hs_key, client_hs_iv, client_hs_hp_key = \
+    get_key_iv_hp(ctx.client_hs_traffic_secret)
+print('client_hs_key:')
+print(hexdump(client_hs_key))
+print('client_hs_iv:')
+print(hexdump(client_hs_iv))
+print('client_hs_hp_key:')
+print(hexdump(client_hs_hp_key))
+server_hs_key, server_hs_iv, server_hs_hp_key = \
+    get_key_iv_hp(ctx.server_hs_traffic_secret)
+print('server_hs_key:')
+print(hexdump(server_hs_key))
+print('server_hs_iv:')
+print(hexdump(server_hs_iv))
+print('server_hs_hp_key:')
+print(hexdump(server_hs_hp_key))
+
+print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+res = conn.recvfrom()
+# print(res)
+recv_msg, addr = res
+recv_packet = LongPacket.from_bytes(recv_msg)
+recv_packet_bytes = bytes(recv_packet)
+print('=== Recv packet ===')
+print(recv_packet)
+
+print('=== Recv server handshake packet ===')
+server_handshake_packet_bytes = header_protection(recv_packet, server_hs_hp_key, mode='decrypt', debug=True)
+print('---')
+print(hexdump(server_handshake_packet_bytes))
+

@@ -309,6 +309,9 @@ def List(size_t, elem_t):
         def __init__(self, array):
             self.array = array
 
+        def __getitem__(self, item):
+            return self.array[item]
+
         def get_array(self):
             return self.array
 

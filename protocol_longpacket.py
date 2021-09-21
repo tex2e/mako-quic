@@ -7,7 +7,7 @@ from protocol_quic import HeaderForm
 
 class PacketType(Enum):
     INITIAL   = 0x00
-    _0RTT     = 0x01
+    a0RTT     = 0x01
     HANDSHAKE = 0x02
     RETRY     = 0x03
 
@@ -16,7 +16,8 @@ class PacketType(Enum):
 #   Fixed Bit (1) = 1,
 #   Long Packet Type (2),
 #   Type-Specific Bits (4),
-
+#   ...
+# }
 class LongPacketFlags(Type):
     def __init__(self, header_form=HeaderForm.LONG, fixed_bit=1,
                        long_packet_type=0, type_specific_bits=0,
@@ -95,12 +96,14 @@ class LongPacketFlags(Type):
 #   Protected Payload (..)     # Remainder
 # }
 
+# Initial Packet Payload
 @meta.struct
 class InitialPacketPayload(meta.MetaStruct):
     token: OpaqueVarLenIntEncoding
     length: VarLenIntEncoding
     protected_payload: Opaque(lambda self: self.length) # Protected
 
+# Retry Packet Payload
 class RetryPacketPayload(Type):
     def __init__(self, retry_token, retry_integrity_tag):
         self.retry_token = retry_token
@@ -120,20 +123,34 @@ class RetryPacketPayload(Type):
         return "RetryPacketPayload(retry_token=%s, retry_integrity_tag=%s)" % \
                (self.retry_token, self.retry_integrity_tag)
 
+# 0-RTT Packet Payload
+@meta.struct
+class A0RTTPacketPayload(meta.MetaStruct):
+    length: VarLenIntEncoding
+    protected_payload: Opaque(lambda self: self.length) # Protected
+
+# Handshake Packet Payload
+@meta.struct
+class HandshakePacketPayload(meta.MetaStruct):
+    length: VarLenIntEncoding
+    protected_payload: Opaque(lambda self: self.length) # Protected
+
+# Long Packet
 @meta.struct
 class LongPacket(meta.MetaStruct):
     flags: LongPacketFlags # Protected
     version: Uint32
     dest_conn_id: OpaqueUint8
     src_conn_id: OpaqueUint8
-    # length: VarLenIntEncoding
-    # protected_payload: Opaque(lambda self: self.length) # Protected
     payload: meta.Select('self.flags.long_packet_type', cases={
         int(PacketType.INITIAL): InitialPacketPayload,
+        int(PacketType.a0RTT): A0RTTPacketPayload,
+        int(PacketType.HANDSHAKE): HandshakePacketPayload,
         int(PacketType.RETRY): RetryPacketPayload
     })
 
 
+# Initial Packet
 @meta.struct
 class InitialPacket(meta.MetaStruct):
     flags: LongPacketFlags
@@ -165,4 +182,3 @@ def create_aad(flags: LongPacketFlags, version: Uint32, dest_conn_id: OpaqueUint
     return bytes(flags) + bytes(version) + bytes(dest_conn_id) + \
            bytes(src_conn_id) + bytes(token) + bytes(length) + \
            bytes(packet_number)
-

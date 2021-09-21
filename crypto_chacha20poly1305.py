@@ -1,6 +1,5 @@
 
 import struct
-import binascii
 import math
 from typing import List
 
@@ -199,10 +198,10 @@ class Chacha20Poly1305(Cipher):
         plaintext, tag = chacha20_aead_decrypt(key=self.key, nonce=nonce,
                                                ciphertext=ciphertext, aad=aad)
 
-        from disp import hexdump
-        print('+ [+] plaintext:')
-        print(hexdump(plaintext))
-        print('+ [+] cnt:', hex(self.seq_number))
+        # from disp import hexdump
+        # print('+ [+] plaintext:')
+        # print(hexdump(plaintext))
+        # print('+ [+] cnt:', hex(self.seq_number))
         print('+ [+] aad:', aad.hex())
         print('+ [+] mac:', mac.hex())
         print('+ [+] tag:', tag.hex())

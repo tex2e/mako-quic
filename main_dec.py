@@ -99,6 +99,7 @@ else:
     cs_hp = server_hp
 
 # --- 2. Header Protectionを解除する ---
+
 recv_packet_bytes = header_protection(recv_packet, cs_hp, mode='decrypt')
 
 # --- 3. Payloadの暗号文を復号する ---
