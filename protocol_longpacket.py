@@ -1,5 +1,5 @@
 
-from metatype import Type, Enum, List
+from metatype import Type, Enum
 from metatype import Uint32, Opaque, OpaqueUint8, VarLenIntEncoding, OpaqueVarLenIntEncoding
 import metastruct as meta
 from utils import hexdump
@@ -182,3 +182,25 @@ def create_aad(flags: LongPacketFlags, version: Uint32, dest_conn_id: OpaqueUint
     return bytes(flags) + bytes(version) + bytes(dest_conn_id) + \
            bytes(src_conn_id) + bytes(token) + bytes(length) + \
            bytes(packet_number)
+
+
+
+# Handshake Packet
+@meta.struct
+class HandshakePacket(meta.MetaStruct):
+    flags: LongPacketFlags
+    version: Uint32
+    dest_conn_id: OpaqueUint8
+    src_conn_id: OpaqueUint8
+    length: VarLenIntEncoding
+    packet_number: Opaque(lambda self: self.flags.type_specific_bits_lsb2bit + 1)
+    packet_payload: Opaque(lambda self: int(self.length) - self.packet_number.get_size())
+
+    def get_header_bytes(self):
+        return create_aad(self.flags, self.version, self.dest_conn_id, self.src_conn_id, \
+                          b'', self.length, self.packet_number)
+
+    def get_packet_number_int(self):
+        return int.from_bytes(bytes(self.packet_number), 'big')
+
+

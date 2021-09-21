@@ -29,7 +29,7 @@ class ClientConn:
 from utils import hexdump
 from metatype import Uint8, Uint16, Uint32, Opaque, OpaqueUint8, OpaqueUint16, OpaqueLength, VarLenIntEncoding, OpaqueVarLenIntEncoding, List
 from protocol_quic import QUICVersions, HeaderForm
-from protocol_longpacket import InitialPacket, LongPacket, LongPacketFlags, PacketType
+from protocol_longpacket import InitialPacket, LongPacket, LongPacketFlags, PacketType, HandshakePacket
 from protocol_packetprotection import get_key_iv_hp, get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
 from protocol_frame import Frame, FrameType, CryptoFrame
 from protocol_tls13_handshake import Handshake, HandshakeType
@@ -438,3 +438,30 @@ server_handshake_packet_bytes = header_protection(recv_packet, server_hs_hp_key,
 print('---')
 print(hexdump(server_handshake_packet_bytes))
 
+print('---')
+# FIXME: EncryptedExtension を受信時に CRYPTO の Offset=0x3C3 で、Length=0x194 となっていて、
+#        実際のHandshakeデータはオフセット 0x73 から始まっているのだが、どう解釈すべきか...
+server_handshake_packet = HandshakePacket.from_bytes(server_handshake_packet_bytes)
+server_handshake_packet_bytes = bytes(server_handshake_packet)
+print(server_handshake_packet)
+print(hexdump(server_handshake_packet_bytes))
+
+ciphertext_payload_bytes = bytes(server_handshake_packet.packet_payload)
+aad = server_handshake_packet.get_header_bytes()  # Additional Auth Data
+packet_number = server_handshake_packet.get_packet_number_int()
+plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_hs_key, server_hs_iv, aad, packet_number)
+print('decrypted:')
+print(hexdump(plaintext_payload_bytes))
+plaintext_payload_bytes = b'\x06' + \
+    b'\x00' + \
+    bytes(VarLenIntEncoding(Uint16(len(plaintext_payload_bytes[0x72:0x19A])))) + \
+    plaintext_payload_bytes[0x72:0x19A]
+print('decrypted2:')
+print(hexdump(plaintext_payload_bytes))
+
+# Framesの解析
+print('-----')
+Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
+
+frames = Frames.from_bytes(plaintext_payload_bytes)
+print(frames)

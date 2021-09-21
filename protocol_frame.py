@@ -1,5 +1,5 @@
 
-from metatype import Uint8, Uint32, Uint64, Opaque, OpaqueUint8, VarLenIntEncoding, Type, Enum, List
+from metatype import Uint8, Uint32, VarLenIntEncoding, Type, Enum
 import metastruct as meta
 from utils import hexdump
 from protocol_tls13_handshake import Handshake
@@ -69,7 +69,7 @@ class AckFrame(meta.MetaStruct):
 # }
 @meta.struct
 class CryptoFrame(meta.MetaStruct):
-    offset: VarLenIntEncoding
+    offset: VarLenIntEncoding  # 使用方法不明
     length: VarLenIntEncoding = lambda self: VarLenIntEncoding(Uint32(len(bytes(self.data))))
     data: Handshake
 
