@@ -1,6 +1,7 @@
 
 import sys
 import socket
+import io
 
 class ClientConn:
     def __init__(self, host, port=443):
@@ -14,7 +15,7 @@ class ClientConn:
         return self.sock.sendto(message, self.server_address)
 
     # メッセージの受信
-    def recvfrom(self, buffer_size=1024):
+    def recvfrom(self, buffer_size=2048): # 1024
         data, addr = self.sock.recvfrom(buffer_size)
         return data, addr
 
@@ -272,12 +273,12 @@ print(recv_packet)
 if PacketType(recv_packet.flags.long_packet_type) == PacketType.RETRY:
     # --- 2回目 -----------------------------------------------------------------
     # 受信したRetryパケットからtokenを取り出して、ClientHelloを含むQUICパケットを作って送る
-    print('---')
+    # print('---')
     retry_token = recv_packet.payload.retry_token
     client_dst_connection_id = recv_packet.src_conn_id.byte
-    print('[+] server conn id:')
-    print(hexdump(recv_packet.src_conn_id.byte))
-    print('[+] retry_token:', retry_token)
+    # print('[+] server conn id:')
+    # print(hexdump(recv_packet.src_conn_id.byte))
+    # print('[+] retry_token:', retry_token)
 
     # Send InitailPacket after Retry
 
@@ -324,31 +325,38 @@ if PacketType(recv_packet.flags.long_packet_type) == PacketType.RETRY:
     print(hexdump(aad))
 
     ciphertext_payload_bytes = encrypt_payload(plaintext_payload_bytes, client_key, client_iv, aad, packet_number)
-
     # print('encrypted:')
     # print(hexdump(ciphertext_payload_bytes))
-
     initial_packet.length = VarLenIntEncoding(LengthType(len(ciphertext_payload_bytes) + packet_number_len))
     initial_packet.packet_payload = OpaqueLength(ciphertext_payload_bytes)
     initial_packet.update()
     print(initial_packet)
 
     send_packet = LongPacket.from_bytes(bytes(initial_packet))
-    send_packet_bytes = header_protection(send_packet, client_hp_key, mode='encrypt', debug=True)
+    send_packet_bytes = header_protection(send_packet, client_hp_key, mode='encrypt')
     # print('encrypted packet:')
     # print(hexdump(send_packet_bytes))
     print('[+] len(send_packet_bytes):', len(send_packet_bytes))
 
     conn = ClientConn(peer_ipaddr, peer_port)
     res = conn.sendto(send_packet_bytes)
-    # print(res)
     res = conn.recvfrom()
-    # print(res)
     recv_msg, addr = res
+    # print('<<< Recv')
+    # print(hexdump(recv_msg))
 
-    recv_packet = LongPacket.from_bytes(recv_msg)
-    print('=== Recv packet ===')
+    #print(hexdump(recv_msg)) # ここには ServerInitialPacket と Handshake(CRYPTO[EE]の前半部分) が含まれている
+    recv_msg_stream = io.BytesIO(recv_msg)
+    recv_packet = LongPacket.from_stream(recv_msg_stream)
+    print('=== Recv Packet1 ===')
     print(recv_packet)
+    print(hexdump(bytes(recv_packet)))
+    recv_packet2 = LongPacket.from_stream(recv_msg_stream)
+    print('=== Recv Packet2 ===')
+    print(recv_packet2)
+    print(hexdump(bytes(recv_packet2)))
+    print('rest:')
+    print(recv_msg_stream.read())
 
 
 if PacketType(recv_packet.flags.long_packet_type) != PacketType.INITIAL:
@@ -369,31 +377,27 @@ print(hexdump(server_iv))
 print('server_hp_key:')
 print(hexdump(server_hp_key))
 
-print('=== Recv server initial packet ===')
+print('=== Recv Server Initial Packet ===')
 server_initial_packet_bytes = header_protection(recv_packet, server_hp_key, mode='decrypt')
-
-print('---')
 server_initial_packet = InitialPacket.from_bytes(server_initial_packet_bytes)
 server_initial_packet_bytes = bytes(server_initial_packet)
 print(server_initial_packet)
-print(hexdump(server_initial_packet_bytes))
+# print(hexdump(server_initial_packet_bytes))
 
 ciphertext_payload_bytes = bytes(server_initial_packet.packet_payload)
 aad = server_initial_packet.get_header_bytes()  # Additional Auth Data
 packet_number = server_initial_packet.get_packet_number_int()
 plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_key, server_iv, aad, packet_number)
-print('decrypted:')
-print(hexdump(plaintext_payload_bytes))
+# print('decrypted:')
+# print(hexdump(plaintext_payload_bytes))
 
 # Framesの解析
 print('-----')
 Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
-
 frames = Frames.from_bytes(plaintext_payload_bytes)
 print(frames)
 
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-
+print('-----')
 server_hello = frames[1].frame_content.data
 print('>>>', server_hello.msg.cipher_suite)
 ctx.append_msg(server_hello)
@@ -425,22 +429,49 @@ print('server_hs_hp_key:')
 print(hexdump(server_hs_hp_key))
 
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-res = conn.recvfrom()
-# print(res)
-recv_msg, addr = res
-recv_packet = LongPacket.from_bytes(recv_msg)
-recv_packet_bytes = bytes(recv_packet)
-print('=== Recv packet ===')
-print(recv_packet)
-
-print('=== Recv server handshake packet ===')
-server_handshake_packet_bytes = header_protection(recv_packet, server_hs_hp_key, mode='decrypt', debug=True)
+print('=== Recv Server Handshake Packet1 ===')
+print(recv_packet2)
+server_handshake_packet_bytes = header_protection(recv_packet2, server_hs_hp_key, mode='decrypt', debug=True)
 print('---')
 print(hexdump(server_handshake_packet_bytes))
 
-print('---')
-# FIXME: EncryptedExtension を受信時に CRYPTO の Offset=0x3C3 で、Length=0x194 となっていて、
-#        実際のHandshakeデータはオフセット 0x73 から始まっているのだが、どう解釈すべきか...
+server_handshake_packet = HandshakePacket.from_bytes(server_handshake_packet_bytes)
+server_handshake_packet_bytes = bytes(server_handshake_packet)
+print(server_handshake_packet)
+print(hexdump(server_handshake_packet_bytes))
+
+ciphertext_payload_bytes = bytes(server_handshake_packet.packet_payload)
+aad = server_handshake_packet.get_header_bytes()  # Additional Auth Data
+packet_number = server_handshake_packet.get_packet_number_int()
+# TODO: ここの復号処理でInvalidTagになってしまうのだが... ==> デフォルトで1024bytesしか読み取っていなかったので、上限を2048に変更
+plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_hs_key, server_hs_iv, aad, packet_number, debug=True)
+print('decrypted:')
+print(hexdump(plaintext_payload_bytes))
+
+print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+res = conn.recvfrom()
+recv_msg, addr = res
+recv_msg_stream = io.BytesIO(recv_msg)
+recv_packet = LongPacket.from_stream(recv_msg_stream)
+recv_packet_bytes = bytes(recv_packet)
+# print('rest:')
+# print(recv_msg_stream.read())
+print('=== Recv packet ===')
+print(recv_packet)
+
+print('=== Recv Server Handshake Packet2 ===')
+server_handshake_packet_bytes = header_protection(recv_packet, server_hs_hp_key, mode='decrypt')
+print(hexdump(server_handshake_packet_bytes))
+
+# print('---')
+# # FIXME: EncryptedExtension を受信時に CRYPTO の Offset=0x3C3 で、Length=0x194 となっていて、
+# #        実際のHandshakeデータはオフセット 0x73 から始まっているのだが、どう解釈すべきか...
+#
+## => CRYPTO Frameは分割して送信されるため。1つ目が offset=0, length=0x3c3 で、2つ目が offset=0x3c3, length=0x194
+## => とりあえず、CRYPTO FrameのData部分はTLSメッセージが途切れている可能性があるので、
+##    そこを考慮して、OffsetとLengthを確認しながら、全てのCryptoDataが集まったときに、
+##    初めてTLSメッセージとして解析するようにしないといけないことがわかった。
+#
 server_handshake_packet = HandshakePacket.from_bytes(server_handshake_packet_bytes)
 server_handshake_packet_bytes = bytes(server_handshake_packet)
 print(server_handshake_packet)
@@ -452,16 +483,19 @@ packet_number = server_handshake_packet.get_packet_number_int()
 plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_hs_key, server_hs_iv, aad, packet_number)
 print('decrypted:')
 print(hexdump(plaintext_payload_bytes))
-plaintext_payload_bytes = b'\x06' + \
-    b'\x00' + \
-    bytes(VarLenIntEncoding(Uint16(len(plaintext_payload_bytes[0x72:0x19A])))) + \
-    plaintext_payload_bytes[0x72:0x19A]
-print('decrypted2:')
-print(hexdump(plaintext_payload_bytes))
 
-# Framesの解析
-print('-----')
-Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
+# # Framesの解析
+# print('-----')
+# Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
+# frames = Frames.from_bytes(plaintext_payload_bytes)
+# print(frames)
 
-frames = Frames.from_bytes(plaintext_payload_bytes)
-print(frames)
+
+# # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+# # res = conn.recvfrom()
+# # # print(res)
+# # recv_msg, addr = res
+# # recv_packet = LongPacket.from_bytes(recv_msg)
+# # recv_packet_bytes = bytes(recv_packet)
+# # print('=== Recv packet ===')
+# # print(recv_packet)

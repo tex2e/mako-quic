@@ -105,12 +105,12 @@ def _enc_dec_payload(input_bytes, key, iv, aad, packet_number, mode='encrypt', d
     return output_bytes
 
 def decrypt_payload(payload: bytes, cs_key: bytes, cs_iv: bytes, aad: bytes,
-                    packet_number: int) -> bytes:
-    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='decrypt')
+                    packet_number: int, debug=False) -> bytes:
+    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='decrypt', debug=debug)
 
 def encrypt_payload(payload: bytes, cs_key: bytes, cs_iv: bytes, aad: bytes,
-                    packet_number: int) -> bytes:
-    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='encrypt')
+                    packet_number: int, debug=False) -> bytes:
+    return _enc_dec_payload(payload, cs_key, cs_iv, aad, packet_number, mode='encrypt', debug=debug)
 
 
 
