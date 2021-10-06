@@ -57,6 +57,9 @@ dhkex_class = x25519
 secret_key = bytes.fromhex('6923bcdc7b80831a7f0d6fdfddb8e1b5e2f042cb1991cb19fd7ad9bce444fe63')
 public_key = dhkex_class(secret_key)
 
+client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
+client_src_connection_id = bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')
+
 crypto_frame = Frame(
     frame_type=FrameType.CRYPTO,
     frame_content=CryptoFrame(
@@ -72,15 +75,15 @@ crypto_frame = Frame(
                     # CipherSuite.TLS_CHACHA20_POLY1305_SHA256,
                 ]),
                 extensions=Extensions([
-                    Extension(
-                        extension_type=ExtensionType.server_name,
-                        extension_data=ServerNameIndications([
-                            ServerNameIndication(
-                                name_type=ServerNameIndicationType.host_name,
-                                host_name=OpaqueUint16(b'localhost')
-                            )
-                        ])
-                    ),
+                    # Extension(
+                    #     extension_type=ExtensionType.server_name,
+                    #     extension_data=ServerNameIndications([
+                    #         ServerNameIndication(
+                    #             name_type=ServerNameIndicationType.host_name,
+                    #             host_name=OpaqueUint16(b'localhost')
+                    #         )
+                    #     ])
+                    # ),
                     Extension(
                         extension_type=ExtensionType.supported_versions,
                         extension_data=SupportedVersions(
@@ -108,8 +111,8 @@ crypto_frame = Frame(
                         extension_data=SignatureSchemeList(
                             supported_signature_algorithms=SignatureSchemes([
                                 SignatureScheme.rsa_pss_rsae_sha256,
-                                SignatureScheme.rsa_pss_rsae_sha384,
-                                SignatureScheme.rsa_pss_rsae_sha512,
+                                # SignatureScheme.rsa_pss_rsae_sha384,
+                                # SignatureScheme.rsa_pss_rsae_sha512,
                             ])
                         )
                     ),
@@ -127,53 +130,53 @@ crypto_frame = Frame(
                     Extension(
                         extension_type=ExtensionType.quic_transport_parameters,
                         extension_data=QuicTransportParams([
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.max_idle_timeout,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(30000))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.max_udp_payload_size,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(1350))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_data,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(10000000))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_stream_data_bidi_local,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_stream_data_bidi_remote,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_stream_data_uni,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_streams_bidi,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.initial_max_streams_uni,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.ack_delay_exponent,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(3))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.max_ack_delay,
-                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(25))))
-                            ),
-                            QuicTransportParam(
-                                param_id=QuicTransportParamType.disable_active_migration,
-                                param_value=OpaqueVarLenIntEncoding(b'')
-                            ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.max_idle_timeout,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(30000))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.max_udp_payload_size,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(1350)))) # defaultはUDPの最大ペイロード長の65527bytes
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_data,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(10000000))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_stream_data_bidi_local,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_stream_data_bidi_remote,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_stream_data_uni,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(1000000))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_streams_bidi,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.initial_max_streams_uni,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(100))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.ack_delay_exponent,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(3))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.max_ack_delay,
+                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint8(25))))
+                            # ),
+                            # QuicTransportParam(
+                            #     param_id=QuicTransportParamType.disable_active_migration,
+                            #     param_value=OpaqueVarLenIntEncoding(b'')
+                            # ),
                             QuicTransportParam(
                                 param_id=QuicTransportParamType.initial_source_connection_id,
-                                param_value=OpaqueUint8(bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab'))
+                                param_value=OpaqueUint8(client_src_connection_id)
                             ),
                         ])
                     )
@@ -183,10 +186,7 @@ crypto_frame = Frame(
     )
 )
 crypto_frame_len = len(bytes(crypto_frame))
-ctx.append_msg(crypto_frame.frame_content.data)
-
-client_dst_connection_id = bytes.fromhex('1a26dc5bd9625e2bcd0efd3a329ce83136a32295')
-client_src_connection_id = bytes.fromhex('c6b336557f9128bef8a099a10d320c26e9c8d1ab')
+ctx.append_msg(crypto_frame.frame_content.data) # Add Client Hello
 
 # --- 1回目 ---------------------------------------------------------------------
 packet_number = 1
