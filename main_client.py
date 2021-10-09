@@ -7,7 +7,7 @@ class ClientConn:
     def __init__(self, host, port=443):
         self.server_address = (host, port)
         # ソケット作成
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     # メッセージの送信
@@ -32,7 +32,7 @@ from metatype import Uint8, Uint16, Uint32, Opaque, OpaqueUint8, OpaqueUint16, O
 from protocol_quic import QUICVersions, HeaderForm
 from protocol_longpacket import InitialPacket, LongPacket, LongPacketFlags, PacketType, HandshakePacket
 from protocol_packetprotection import get_key_iv_hp, get_client_server_key_iv_hp, header_protection, encrypt_payload, decrypt_payload
-from protocol_frame import Frame, FrameType, CryptoFrame
+from protocol_frame import Frame, FrameType, CryptoFrame, FrameSplit
 from protocol_tls13_handshake import Handshake, HandshakeType
 from protocol_tls13_hello import ClientHello
 from protocol_tls13_ciphersuite import CipherSuites, CipherSuite
@@ -75,15 +75,6 @@ crypto_frame = Frame(
                     # CipherSuite.TLS_CHACHA20_POLY1305_SHA256,
                 ]),
                 extensions=Extensions([
-                    # Extension(
-                    #     extension_type=ExtensionType.server_name,
-                    #     extension_data=ServerNameIndications([
-                    #         ServerNameIndication(
-                    #             name_type=ServerNameIndicationType.host_name,
-                    #             host_name=OpaqueUint16(b'localhost')
-                    #         )
-                    #     ])
-                    # ),
                     Extension(
                         extension_type=ExtensionType.supported_versions,
                         extension_data=SupportedVersions(
@@ -111,8 +102,6 @@ crypto_frame = Frame(
                         extension_data=SignatureSchemeList(
                             supported_signature_algorithms=SignatureSchemes([
                                 SignatureScheme.rsa_pss_rsae_sha256,
-                                # SignatureScheme.rsa_pss_rsae_sha384,
-                                # SignatureScheme.rsa_pss_rsae_sha512,
                             ])
                         )
                     ),
@@ -130,10 +119,10 @@ crypto_frame = Frame(
                     Extension(
                         extension_type=ExtensionType.quic_transport_parameters,
                         extension_data=QuicTransportParams([
-                            # QuicTransportParam(
-                            #     param_id=QuicTransportParamType.max_idle_timeout,
-                            #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(30000))))
-                            # ),
+                            QuicTransportParam(
+                                param_id=QuicTransportParamType.max_idle_timeout,
+                                param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint32(30000))))
+                            ),
                             # QuicTransportParam(
                             #     param_id=QuicTransportParamType.max_udp_payload_size,
                             #     param_value=OpaqueVarLenIntEncoding(bytes(VarLenIntEncoding(Uint16(1350)))) # defaultはUDPの最大ペイロード長の65527bytes
@@ -209,8 +198,8 @@ length_len = LengthType.size
 def calc_padding_frame_len(initial_packet):
     packet_number_len = (initial_packet.flags.type_specific_bits & 0x03) + 1  # バケット番号長
     # Clientが送信するInitial Packetを含むUDPペイロードは1200バイト以上にしないといけない (MUST)
-    padding_frame_len = 1200 - 5 - len(bytes(initial_packet.dest_conn_id)) - len(bytes(initial_packet.src_conn_id)) - len(bytes(initial_packet.token)) - length_len - packet_number_len - crypto_frame_len - aead_tag_len
-    return padding_frame_len - 1
+    padding_frame_len = 1200 - 5 - len(bytes(initial_packet.dest_conn_id)) - len(bytes(initial_packet.src_conn_id)) - len(bytes(initial_packet.token)) - length_len - packet_number_len - crypto_frame_len - aead_tag_len - 1
+    return padding_frame_len
 
 padding_frame_len = calc_padding_frame_len(initial_packet)
 print('[+] padding_frame_len:', padding_frame_len)
@@ -227,11 +216,10 @@ frames = Frames([
 ])
 plaintext_payload_bytes = bytes(frames)
 packet_number_len = (initial_packet.flags.type_specific_bits & 0x03) + 1  # バケット番号長
-initial_packet.packet_payload = plaintext_payload_bytes
 initial_packet.length = VarLenIntEncoding(LengthType(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len))
 initial_packet.update()
-print('=== Send packet ===')
-print(initial_packet)
+# print('=== Send packet ===')
+# print(initial_packet)
 
 client_key, client_iv, client_hp_key, server_key, server_iv, server_hp_key = \
     get_client_server_key_iv_hp(client_dst_connection_id)
@@ -265,7 +253,7 @@ recv_msg, addr = res
 
 recv_packet = LongPacket.from_bytes(recv_msg)
 recv_packet_bytes = bytes(recv_packet)
-print('=== Recv packet ===')
+print('=== Recv Packet ===')
 print(recv_packet)
 # print(hexdump(recv_packet_bytes))
 
@@ -310,12 +298,12 @@ if PacketType(recv_packet.flags.long_packet_type) == PacketType.RETRY:
     ])
     plaintext_payload_bytes = bytes(frames)
     packet_number_len = (initial_packet.flags.type_specific_bits & 0x03) + 1  # バケット番号長
-    initial_packet.packet_payload = plaintext_payload_bytes
+    # initial_packet.packet_payload = plaintext_payload_bytes
     initial_packet.length = VarLenIntEncoding(LengthType(len(plaintext_payload_bytes) + packet_number_len + aead_tag_len))
     initial_packet.update()
 
-    print('=== Send packet ===')
-    print(initial_packet)
+    # print('=== Send packet ===')
+    # print(initial_packet)
 
     client_key, client_iv, client_hp_key, server_key, server_iv, server_hp_key = \
         get_client_server_key_iv_hp(client_dst_connection_id)
@@ -443,10 +431,15 @@ print(hexdump(server_handshake_packet_bytes))
 ciphertext_payload_bytes = bytes(server_handshake_packet.packet_payload)
 aad = server_handshake_packet.get_header_bytes()  # Additional Auth Data
 packet_number = server_handshake_packet.get_packet_number_int()
-# TODO: ここの復号処理でInvalidTagになってしまうのだが... ==> デフォルトで1024bytesしか読み取っていなかったので、上限を2048に変更
 plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_hs_key, server_hs_iv, aad, packet_number, debug=True)
 print('decrypted:')
 print(hexdump(plaintext_payload_bytes))
+
+crypto_frame_split_bytes = b''
+crypto_frame = FrameSplit.from_bytes(plaintext_payload_bytes)
+print('crypto_frame.frame_content.offset:', crypto_frame.frame_content.offset)
+print('crypto_frame.frame_content.length:', crypto_frame.frame_content.length)
+crypto_frame_split_bytes += bytes(crypto_frame.frame_content.data)
 
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 res = conn.recvfrom()
@@ -454,9 +447,7 @@ recv_msg, addr = res
 recv_msg_stream = io.BytesIO(recv_msg)
 recv_packet = LongPacket.from_stream(recv_msg_stream)
 recv_packet_bytes = bytes(recv_packet)
-# print('rest:')
-# print(recv_msg_stream.read())
-print('=== Recv packet ===')
+print('=== Recv Packet ===')
 print(recv_packet)
 
 print('=== Recv Server Handshake Packet2 ===')
@@ -484,11 +475,22 @@ plaintext_payload_bytes = decrypt_payload(ciphertext_payload_bytes, server_hs_ke
 print('decrypted:')
 print(hexdump(plaintext_payload_bytes))
 
-# # Framesの解析
-# print('-----')
-# Frames = List(size_t=lambda self: len(plaintext_payload_bytes), elem_t=Frame)
-# frames = Frames.from_bytes(plaintext_payload_bytes)
-# print(frames)
+crypto_frame = FrameSplit.from_bytes(plaintext_payload_bytes)
+print('crypto_frame.frame_content.offset:', crypto_frame.frame_content.offset)
+print('crypto_frame.frame_content.length:', crypto_frame.frame_content.length)
+crypto_frame_split_bytes += bytes(crypto_frame.frame_content.data)
+
+print("--- TLS Messages ---")
+print(hexdump(crypto_frame_split_bytes))
+
+crypto_frame_split_stream_len = len(crypto_frame_split_bytes)
+crypto_frame_split_stream = io.BytesIO(crypto_frame_split_bytes)
+# EncryptedExtensions, Certificate, CertificateVerify, Finished
+while crypto_frame_split_stream.tell() < crypto_frame_split_stream_len:
+    handshake = Handshake.from_stream(crypto_frame_split_stream)
+    print(handshake)
+
+
 
 
 # # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
@@ -497,5 +499,5 @@ print(hexdump(plaintext_payload_bytes))
 # # recv_msg, addr = res
 # # recv_packet = LongPacket.from_bytes(recv_msg)
 # # recv_packet_bytes = bytes(recv_packet)
-# # print('=== Recv packet ===')
+# # print('=== Recv Packet ===')
 # # print(recv_packet)

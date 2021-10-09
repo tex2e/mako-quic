@@ -1,5 +1,5 @@
 
-from metatype import Uint8, Uint32, VarLenIntEncoding, Type, Enum
+from metatype import OpaqueLength, Uint8, Uint32, VarLenIntEncoding, Type, Enum
 import metastruct as meta
 from utils import hexdump
 from protocol_tls13_handshake import Handshake
@@ -67,12 +67,24 @@ class AckFrame(meta.MetaStruct):
 #   Length (i),
 #   Crypto Data (..),
 # }
+# 最初のデータで、dataがHandshakeとして復元できない場合は未完全の可能性があるので、後続のCRYPTO Frameを待つ。
+# Offset≠0のときは、Handshakeデータが分割されている部分に埋め込んで復元する。
+# 送信時で分割する必要がない場合は以下のCryptoFrameクラスを使う。
 @meta.struct
 class CryptoFrame(meta.MetaStruct):
-    offset: VarLenIntEncoding  # 使用方法不明
+    offset: VarLenIntEncoding
     length: VarLenIntEncoding = lambda self: VarLenIntEncoding(Uint32(len(bytes(self.data))))
     data: Handshake
 
+# 受信時で分割されている可能性がある場合は以下のCryptoFrameSplitを使う。
+@meta.struct
+class CryptoFrameSplit(meta.MetaStruct):
+    offset: VarLenIntEncoding
+    length: VarLenIntEncoding
+    data: OpaqueLength
+
+
+# 分割されていない場合
 @meta.struct
 class Frame(meta.MetaStruct):
     frame_type: FrameType
@@ -82,4 +94,10 @@ class Frame(meta.MetaStruct):
         FrameType.CRYPTO: CryptoFrame,
     })
 
-
+# 分割されている場合
+@meta.struct
+class FrameSplit(meta.MetaStruct):
+    frame_type: FrameType
+    frame_content: meta.Select('frame_type', cases={
+        FrameType.CRYPTO: CryptoFrameSplit,
+    })

@@ -33,14 +33,21 @@ class CertificateVerify(meta.MetaStruct):
 
 # --- Finished -----------------------------------------------------------------
 
-class Hash:
-    length = None
+# ### TLS Finished ###
+#
+# class Hash:
+#     length = None
+#
+# OpaqueHash = Opaque(lambda self: Hash.length)
+#
+# @meta.struct
+# class Finished(meta.MetaStruct):
+#     verify_data: OpaqueHash
 
-OpaqueHash = Opaque(lambda self: Hash.length)
-
+### QUIC Finished ###
 @meta.struct
 class Finished(meta.MetaStruct):
-    verify_data: OpaqueHash
+    verify_data: OpaqueUint24
 
 
 # ------------------------------------------------------------------------------
@@ -70,21 +77,21 @@ if __name__ == '__main__':
             self.assertEqual(bytes(c), c_bytes)
             self.assertEqual(Certificate.from_bytes(bytes(c)), c)
 
-        def test_finished_to_bytes(self):
+        # def test_finished_to_bytes(self):
+        #
+        #     finished = Finished(verify_data=OpaqueHash(b'\xAA' * 32))
+        #     finished_byte = b'\xAA' * 32
+        #     self.assertEqual(bytes(finished), finished_byte)
 
-            finished = Finished(verify_data=OpaqueHash(b'\xAA' * 32))
-            finished_byte = b'\xAA' * 32
-            self.assertEqual(bytes(finished), finished_byte)
-
-        def test_finished_from_bytes(self):
-            finished = Finished(verify_data=OpaqueHash(b'\xAA' * 32))
-
-            with self.assertRaises(Exception) as cm:
-                Finished.from_bytes(bytes(finished))
-
-            Hash.length = 32
-            finished2 = Finished.from_bytes(bytes(finished))
-            self.assertEqual(finished, finished2)
+        # def test_finished_from_bytes(self):
+        #     finished = Finished(verify_data=OpaqueHash(b'\xAA' * 32))
+        #
+        #     with self.assertRaises(Exception) as cm:
+        #         Finished.from_bytes(bytes(finished))
+        #
+        #     Hash.length = 32
+        #     finished2 = Finished.from_bytes(bytes(finished))
+        #     self.assertEqual(finished, finished2)
 
 
     unittest.main()

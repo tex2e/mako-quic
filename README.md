@@ -31,3 +31,7 @@ cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-server -- \
 cargo run --manifest-path=tools/apps/Cargo.toml --bin quiche-client -- https://localhost:4433/ --no-verify
 ```
 
+
+Wiresharkで復号する場合は、変数 `SSLKEYLOGFILE=./keylog.txt` をコマンド実行時に追加する。
+
+

@@ -1,4 +1,5 @@
 
+import sys
 import inspect
 import struct # バイト列の解釈
 import io # バイトストリーム操作
@@ -13,7 +14,12 @@ class Type:
     # バイト列の代わりにストリームを渡すことで、読み取った文字数をストリームが保持する。
     @classmethod
     def from_bytes(cls, data):
-        return cls.from_stream(io.BytesIO(data))
+        stream = io.BytesIO(data)
+        try:
+            return cls.from_stream(stream)
+        except Exception as e:
+            print('[-] from_bytes: Error while reading bytes at {0:d} (0x{0:x}).'.format(stream.tell()), file=sys.stderr)
+            raise e
 
     # 抽象クラス以外は必ず上書きすること
     @classmethod
@@ -221,7 +227,14 @@ def OpaqueFix(size):
         def from_stream(cls, fs, parent=None):
             size = cls.size
             if callable(size): # ラムダのときは実行時に評価した値がサイズになる
-                size = int(size(parent))
+                try:
+                    size = int(size(parent))
+                except Exception as e:
+                    print('[-] OpaqueFix.from_stream: cls:   ', cls)
+                    print('[-] OpaqueFix.from_stream: size:  ', size)
+                    print('[-] OpaqueFix.from_stream: parent:')
+                    print(parent)
+                    raise e
             opaque = OpaqueFix(fs.read(size))
             opaque.set_parent(parent)
             return opaque
