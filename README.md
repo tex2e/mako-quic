@@ -1,7 +1,8 @@
 
 # mako-http3
 
-実装中
+本レポジトリは [tex2e/mako-tls13](https://github.com/tex2e/mako-tls13) へ統合しました。
+こちらのレポジトリは更新しません。
 
 
 
